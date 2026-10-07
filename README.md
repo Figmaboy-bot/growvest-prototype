@@ -56,7 +56,7 @@ xcrun simctl launch booted com.growvest.prototype -demoAmount 100000 -demoStep r
 | `-demoAmount` | An amount to pre-type, e.g. `25000` |
 | `-demoStep` (buy/sell) | `payment`, `review`, `pin`, `success`, `swap`, `typing`, `tour` |
 | `-demoKYC` | `idcard`, `face`, `address`, `ready`, `submitted` |
-| `-demoProfile` | `filled`, `investor`, `experience`, `businessowner`, `both`, `success`, `businesssuccess` |
+| `-demoProfile` | `filled`, `investor`, `experience`, `experienceblank`, `businessowner`, `both`, `success`, `businesssuccess` |
 
 ## Project structure (iOS)
 

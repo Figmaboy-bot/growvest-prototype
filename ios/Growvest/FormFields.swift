@@ -43,6 +43,8 @@ struct TextInputField: View {
             if let title { FieldLabel(title: title) }
             FieldCapsule(isActive: isFocused) {
                 TextField("", text: $text, prompt: Text(placeholder).foregroundStyle(Color.grey50))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                     .foregroundStyle(.white)
                     .tint(Color.primary50)
             }
@@ -73,8 +75,11 @@ struct BrandDropdown: View {
                     HStack {
                         Text(selection ?? placeholder)
                             .foregroundStyle(selection == nil ? Color.grey50 : .white)
+                            // One line, ending in "…" when it doesn't fit, so the pill keeps its height.
+                            .lineLimit(1)
+                            .truncationMode(.tail)
                             .contentTransition(.opacity)
-                        Spacer()
+                        Spacer(minLength: 8)
                         Group {
                             if let caret {
                                 Image(caret)

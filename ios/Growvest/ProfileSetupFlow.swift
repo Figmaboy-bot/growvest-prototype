@@ -57,8 +57,8 @@ final class ProfileSetupFlow {
     ]
     static let currencies = [("NGN", "🇳🇬"), ("USD", "🇺🇸"), ("GBP", "🇬🇧")]
 
-    /// Risk appetite slider: 71 ticks, as in the design.
-    static let riskTickCount = 71
+    /// Risk appetite slider: 40 ticks (fewer than the Slider component's 48, by request).
+    static let riskTickCount = 40
 
     private(set) var step: Step = .profile
     /// Which way the last step change went, so screens slide in from the correct side.
@@ -222,15 +222,20 @@ struct ProfileSetupView: View {
 
 #if DEBUG
 extension ProfileSetupView {
-    /// `-demoProfile filled|investor|experience|business|both|success|businesssuccess`
+    /// `-demoProfile filled|investor|experience|experienceblank|business|both|success|businesssuccess`
     /// jumps into the flow with sample answers, for demos and screenshots.
     private func applyDemoLaunchArguments() {
         guard let demo = UserDefaults.standard.string(forKey: "demoProfile") else { return }
+        if demo == "experienceblank" {          // experience step with nothing chosen yet
+            flow.role = .investor
+            flow.jump(to: .experience)
+            return
+        }
         flow.fullName = "Adaeze Okafor"
         flow.phone = "8031234567"
         flow.role = demo.hasPrefix("business") ? .businessOwner : demo == "both" ? .both : .investor
         flow.categories = ["Tech", "Agriculture & Farming", "Clean Energy"]
-        flow.riskTick = 30
+        flow.riskTick = 20
         flow.experience = ProfileSetupFlow.experienceLevels[1]
         flow.previouslyInvested = ["Stocks", "Crypto"]
         flow.duration = ProfileSetupFlow.durations[1]
@@ -337,11 +342,11 @@ private struct TagPicker: View {
                 Button { onTap(option) } label: {
                     Text(option)
                         .font(AppFont.interTight(12, relativeTo: .caption))
-                        .foregroundStyle(selected ? Color.primary50 : Color.grey50)
+                        // Selected: solid brand blue with black text, no outline.
+                        .foregroundStyle(selected ? Color.ink : Color.grey50)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
-                        .background(Capsule().fill(selected ? Color.primary20 : Color.grey80))
-                        .overlay(Capsule().strokeBorder(Color.primary50.opacity(selected ? 0.6 : 0), lineWidth: 1))
+                        .background(Capsule().fill(selected ? Color.primary50 : Color.grey80))
                         .contentShape(Capsule())
                 }
                 .buttonStyle(TagPressStyle())
@@ -350,6 +355,28 @@ private struct TagPicker: View {
             }
         }
         .sensoryFeedback(.selection, trigger: options.filter(isSelected))
+    }
+}
+
+/// A multi-select `TagPicker` led by an "All" chip: All selects every option (or clears them
+/// if all are already on), and shows as selected whenever every option is.
+private struct MultiTagPicker: View {
+    let options: [String]
+    @Binding var selection: Set<String>
+
+    private static let all = "All"
+    private var allSelected: Bool { selection.count == options.count }
+
+    var body: some View {
+        TagPicker(options: [Self.all] + options,
+                  isSelected: { $0 == Self.all ? allSelected : selection.contains($0) },
+                  onTap: { option in
+                      if option == Self.all {
+                          selection = allSelected ? [] : Set(options)
+                      } else {
+                          selection.formSymmetricDifference([option])
+                      }
+                  })
     }
 }
 
@@ -570,9 +597,7 @@ private struct InvestorStep: View {
                      message: "Personalize your investment experience by selecting your preferences and financial details.",
                      buttonTitle: "Continue", canContinue: flow.canContinue, onContinue: flow.next) {
             FieldGroup(title: "Preferred Investment Categories") {
-                TagPicker(options: ProfileSetupFlow.categories,
-                          isSelected: { flow.categories.contains($0) },
-                          onTap: { flow.categories.formSymmetricDifference([$0]) })
+                MultiTagPicker(options: ProfileSetupFlow.categories, selection: $flow.categories)
             }
 
             FieldGroup(title: "Risk Appetite") {
@@ -582,7 +607,7 @@ private struct InvestorStep: View {
     }
 }
 
-/// The ruler-style risk slider: 71 ticks in a grey pill with a white needle. The needle
+/// The ruler-style risk slider: 40 ticks in a grey pill with a white needle. The needle
 /// follows the finger 1:1 and settles onto the nearest tick on release; ticks up to it
 /// light up in the brand colour. Haptics: a light click per tick crossed, a firmer tap when
 /// the level changes (Low → Medium → High), and a solid knock at either end.
@@ -605,22 +630,30 @@ private struct RiskSlider: View {
             GeometryReader { proxy in
                 let step = proxy.size.width / CGFloat(count - 1)
                 ZStack(alignment: .leading) {
-                    HStack(spacing: 0) {
-                        ForEach(0..<count, id: \.self) { index in
-                            Capsule()
-                                .fill(CGFloat(index) <= position + 0.001 ? Color.primary50 : Color.grey50)
-                                .frame(width: 1, height: index == 0 || index == count - 1 ? 28 : 20)
-                            if index < count - 1 { Spacer(minLength: 0) }
-                        }
+                    // Each tick is centred on its own grid point (the same grid the needle uses),
+                    // so lit ticks can be wider without shifting the others.
+                    ForEach(0..<count, id: \.self) { index in
+                        // Lit ticks are 2pt wide (Slider component, Figma 1102:3022) and, by request,
+                        // grow to the first tick's 28pt height; unlit ticks stay 1pt × 20pt.
+                        // Each one springs up as the needle reaches it, so a drag sends a ripple along.
+                        let isLit = CGFloat(index) <= position + 0.001
+                        let width: CGFloat = isLit ? 2 : 1
+                        Capsule()
+                            .fill(isLit ? Color.primary50 : Color.grey50)
+                            .frame(width: width, height: isLit ? 28 : 20)
+                            .animation(.spring(duration: 0.22, bounce: 0.35), value: isLit)
+                            .offset(x: CGFloat(index) * step - width / 2)
                     }
                     Capsule()
                         .fill(.white)
-                        .frame(width: 2, height: 56)
+                        .frame(width: 2, height: 48)
                         .scaleEffect(x: isDragging ? 1 : 0.5, y: isDragging ? 1.04 : 1)
                         .shadow(color: .white.opacity(isDragging ? 0.5 : 0), radius: 4)
                         .offset(x: position * step - 1)
                 }
-                .frame(maxHeight: .infinity)
+                // Ticks are placed by offset, which takes no layout space, so the frame must
+                // fill the track explicitly; otherwise the touch area collapses to the first tick.
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                 .contentShape(.rect)
                 // High priority so a sideways drag inside the scroll view always moves the needle.
                 .highPriorityGesture(
@@ -716,9 +749,7 @@ private struct ExperienceStep: View {
                 .zIndex(openDropdown == .experience ? 1 : 0)
 
             FieldGroup(title: "Previously invested in") {
-                TagPicker(options: ProfileSetupFlow.previousInvestments,
-                          isSelected: { flow.previouslyInvested.contains($0) },
-                          onTap: { flow.previouslyInvested.formSymmetricDifference([$0]) })
+                MultiTagPicker(options: ProfileSetupFlow.previousInvestments, selection: $flow.previouslyInvested)
             }
 
             BrandDropdown(title: "Preferred Investment Duration", placeholder: "Select your preferred investment duration",
