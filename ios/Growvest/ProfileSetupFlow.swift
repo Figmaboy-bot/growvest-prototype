@@ -20,7 +20,7 @@ final class ProfileSetupFlow {
     }
 
     enum Step: Hashable {
-        case profile, investor, experience, business, success
+        case profile, investor, experience, business, verification, success
     }
 
     struct Country: Hashable, Identifiable {
@@ -92,11 +92,18 @@ final class ProfileSetupFlow {
     var xTwitter = ""
     var linkedIn = ""
 
+    // Business verification documents, keyed by kind; a missing key means not uploaded yet.
+    var documents: [BusinessDocument: DocumentUpload] = [:]
+
+    var allDocumentsUploaded: Bool {
+        BusinessDocument.allCases.allSatisfy { documents[$0]?.isComplete == true }
+    }
+
     /// The screens for the chosen role. Until a role is picked it previews the investor path.
     var steps: [Step] {
         switch role {
-        case .businessOwner: [.profile, .business, .success]
-        case .both: [.profile, .investor, .experience, .business, .success]
+        case .businessOwner: [.profile, .business, .verification, .success]
+        case .both: [.profile, .investor, .experience, .business, .verification, .success]
         case .investor, nil: [.profile, .investor, .experience, .success]
         }
     }
@@ -121,6 +128,8 @@ final class ProfileSetupFlow {
             experience != nil && duration != nil && amountRange != nil
         case .business:
             !businessName.trimmingCharacters(in: .whitespaces).isEmpty && industry != nil && (Int(fundingGoal) ?? 0) > 0
+        case .verification:
+            allDocumentsUploaded
         case .success:
             true
         }
@@ -193,6 +202,7 @@ struct ProfileSetupView: View {
             case .investor: InvestorStep(flow: flow)
             case .experience: ExperienceStep(flow: flow)
             case .business: BusinessStep(flow: flow)
+            case .verification: VerificationStep(flow: flow)
             case .success: ProfileSuccessStep(flow: flow) { dismiss() }
             }
         }
@@ -228,7 +238,7 @@ struct ProfileSetupView: View {
 
 #if DEBUG
 extension ProfileSetupView {
-    /// `-demoProfile filled|investor|experience|experienceblank|business|both|success|businesssuccess`
+    /// `-demoProfile filled|investor|experience|experienceblank|business|both|verification|verifymix|verified|success|businesssuccess`
     /// jumps into the flow with sample answers, for demos and screenshots.
     private func applyDemoLaunchArguments() {
         guard let demo = UserDefaults.standard.string(forKey: "demoProfile") else { return }
@@ -239,7 +249,7 @@ extension ProfileSetupView {
         }
         flow.fullName = "Adaeze Okafor"
         flow.phone = "8031234567"
-        flow.role = demo.hasPrefix("business") ? .businessOwner : demo == "both" ? .both : .investor
+        flow.role = demo.hasPrefix("business") || demo.hasPrefix("verif") ? .businessOwner : demo == "both" ? .both : .investor
         flow.categories = ["Tech", "Agriculture & Farming", "Clean Energy"]
         flow.riskTick = 20
         flow.experience = ProfileSetupFlow.experienceLevels[1]
@@ -254,7 +264,21 @@ extension ProfileSetupView {
         case "investor": flow.jump(to: .investor)
         case "experience": flow.jump(to: .experience)
         case "business", "both": flow.jump(to: .business)
-        case "success", "businesssuccess": flow.jump(to: .success)
+        case "verification": flow.jump(to: .verification)
+        case "verifymix":                       // one uploaded, one mid-upload, the rest empty
+            flow.documents[.registration] = DocumentUpload(fileName: "CAC-Certificate.pdf", byteCount: 131_072, progress: 1)
+            flow.documents[.address] = DocumentUpload(fileName: "Lease-Agreement.pdf", byteCount: 245_760, progress: 0.45)
+            flow.jump(to: .verification)
+        case "verified":
+            for kind in BusinessDocument.allCases {
+                flow.documents[kind] = DocumentUpload(fileName: "\(kind.title).pdf", byteCount: 131_072, progress: 1)
+            }
+            flow.jump(to: .verification)
+        case "success", "businesssuccess":
+            for kind in BusinessDocument.allCases {
+                flow.documents[kind] = DocumentUpload(fileName: "\(kind.title).pdf", byteCount: 131_072, progress: 1)
+            }
+            flow.jump(to: .success)
         default: break
         }
     }
@@ -885,7 +909,7 @@ private struct ProfileSuccessStep: View {
 
     private var title: String {
         switch flow.role {
-        case .businessOwner: "Business Profile Created"
+        case .businessOwner: "Business Profile Submitted"
         case .both: "Your Profiles Are Ready"
         case .investor, nil: "Investor Profile Complete"
         }
@@ -894,8 +918,8 @@ private struct ProfileSuccessStep: View {
     private var message: String {
         let business = flow.businessName.isEmpty ? "your business" : flow.businessName
         return switch flow.role {
-        case .businessOwner: "\(business) is ready to meet investors. We'll let you know as soon as they show interest."
-        case .both: "You can now invest in promising businesses and raise funding for \(business)."
+        case .businessOwner: "We're reviewing \(business)'s documents. This usually takes 1–2 business days, and we'll let you know once it's verified."
+        case .both: "You can start investing now. We're verifying \(business)'s documents and will let you know when it's ready to raise funding."
         case .investor, nil: "You're all set to discover and support promising businesses."
         }
     }
@@ -910,6 +934,7 @@ private struct ProfileSuccessStep: View {
             rows.append(("Business", flow.businessName))
             let goal = Int(flow.fundingGoal).map { $0.formatted(.number.locale(Locale(identifier: "en_US"))) } ?? "0"
             rows.append(("Funding goal", "\(flow.currency) \(goal)"))
+            rows.append(("Verification", "In review"))
         }
         return rows
     }
@@ -944,6 +969,254 @@ private struct ProfileSuccessStep: View {
                 .padding(.vertical, 8)
                 .background(Color(.systemBackground))
         }
+    }
+}
+
+// MARK: - 5. Verify Your Business
+
+/// The five documents a business uploads for verification.
+enum BusinessDocument: String, CaseIterable, Identifiable {
+    case registration, address, ownership, tax, financials
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .registration: "Business Registration"
+        case .address: "Proof of Business Address"
+        case .ownership: "Business Ownership"
+        case .tax: "Tax Documents"
+        case .financials: "Financial Records"
+        }
+    }
+
+    var about: String {
+        switch self {
+        case .registration: "Certificate of Incorporation / Business Registration Certificate"
+        case .address: "Utility bill, lease agreement, or other accepted document"
+        case .ownership: "Document showing the business owners or directors"
+        case .tax: "Recent tax filings or tax clearance document till now"
+        case .financials: "Financial documents from the beginning of the business till now"
+        }
+    }
+}
+
+/// A picked file and how far its (simulated) upload has got.
+struct DocumentUpload: Equatable {
+    var fileName: String
+    var byteCount: Int
+    var progress: Double = 0
+    /// A preview for photos; documents show the PDF icon.
+    var thumbnail: UIImage?
+
+    var isComplete: Bool { progress >= 1 }
+    var sizeText: String { ByteCountFormatter.string(fromByteCount: Int64(byteCount), countStyle: .file) }
+}
+
+private struct VerificationStep: View {
+    @Bindable var flow: ProfileSetupFlow
+
+    var body: some View {
+        StepScaffold(title: "Verify Your Business",
+                     message: "Upload a few documents to verify your business and build trust with potential investors.",
+                     buttonTitle: "Submit for Verification", canContinue: flow.canContinue, onContinue: flow.next) {
+            VStack(spacing: 12) {
+                ForEach(BusinessDocument.allCases) { kind in
+                    UploadDocumentCard(kind: kind, upload: $flow.documents[kind])
+                }
+            }
+        }
+    }
+}
+
+/// The Upload Document component (Figma 1112:4522) in its three states:
+/// Default ("Click here to upload"), Uploading (name, spinner, progress, ✕ to cancel)
+/// and Uploaded (size, "Completed", bin to remove). Uploads are simulated.
+private struct UploadDocumentCard: View {
+    let kind: BusinessDocument
+    @Binding var upload: DocumentUpload?
+
+    @State private var isChoosingSource = false
+    @State private var isImportingFile = false
+    @State private var isPickingPhoto = false
+    @State private var photoItem: PhotosPickerItem?
+    @State private var uploadTask: Task<Void, Never>?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(kind.title)
+                    .font(AppFont.interTight(16, relativeTo: .callout))
+                    .foregroundStyle(.white)
+                Text(kind.about)
+                    .font(AppFont.interTight(14, relativeTo: .subheadline))
+                    .foregroundStyle(Color.grey50)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Group {
+                    if let upload {
+                        FileRow(upload: upload, onCancel: cancel, onRemove: remove)
+                            .transition(.opacity.combined(with: .scale(scale: 0.97)))
+                    } else {
+                        Button { isChoosingSource = true } label: {
+                            HStack(spacing: 10) {
+                                Image(.fileArrowUp)
+                                Text("Click here to upload")
+                                    .font(AppFont.interTight(12, relativeTo: .caption))
+                                    .foregroundStyle(Color.grey50)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 12)
+                            .background(.black, in: .rect(cornerRadius: 16))
+                            .contentShape(.rect(cornerRadius: 16))
+                        }
+                        .buttonStyle(RowPressStyle())
+                        .transition(.opacity)
+                        .accessibilityLabel("Upload \(kind.title)")
+                    }
+                }
+                .animation(Motion.step, value: upload == nil)
+
+                Text("Supported formats: JPG, PNG, PDF")
+                    .font(AppFont.interTight(12, relativeTo: .caption))
+                    .foregroundStyle(Color.grey50)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.grey80, in: .rect(cornerRadius: 20))
+        .confirmationDialog("Upload \(kind.title)", isPresented: $isChoosingSource, titleVisibility: .visible) {
+            Button("Choose File") { isImportingFile = true }
+            Button("Choose from Photos") { isPickingPhoto = true }
+        }
+        .fileImporter(isPresented: $isImportingFile, allowedContentTypes: [.pdf, .jpeg, .png]) { result in
+            guard case .success(let url) = result else { return }
+            let isScoped = url.startAccessingSecurityScopedResource()
+            defer { if isScoped { url.stopAccessingSecurityScopedResource() } }
+            let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            let thumbnail = url.pathExtension.lowercased() == "pdf" ? nil : UIImage(contentsOfFile: url.path)
+            start(DocumentUpload(fileName: url.lastPathComponent, byteCount: size, thumbnail: thumbnail))
+        }
+        .photosPicker(isPresented: $isPickingPhoto, selection: $photoItem, matching: .images)
+        .onChange(of: photoItem) { _, item in
+            guard let item else { return }
+            Task {
+                let data = try? await item.loadTransferable(type: Data.self)
+                let ext = item.supportedContentTypes.first?.preferredFilenameExtension ?? "jpg"
+                start(DocumentUpload(fileName: "\(kind.title.replacingOccurrences(of: " ", with: "-")).\(ext)",
+                                     byteCount: data?.count ?? 0,
+                                     thumbnail: data.flatMap(UIImage.init(data:))))
+                photoItem = nil
+            }
+        }
+        .sensoryFeedback(.success, trigger: upload?.isComplete == true) { _, done in done }
+        .hapticSound(.impact, trigger: upload?.isComplete == true)
+    }
+
+    /// Simulates the upload: the bar eases from 0 to full over about a second and a half.
+    private func start(_ file: DocumentUpload) {
+        uploadTask?.cancel()
+        withAnimation(Motion.step) { upload = file }
+        uploadTask = Task { @MainActor in
+            let steps = 30
+            for step in 1...steps {
+                try? await Task.sleep(for: .milliseconds(50))
+                guard !Task.isCancelled, upload != nil else { return }
+                let t = Double(step) / Double(steps)
+                withAnimation(.linear(duration: 0.05)) { upload?.progress = 1 - pow(1 - t, 2) }
+            }
+        }
+    }
+
+    private func cancel() {
+        uploadTask?.cancel()
+        withAnimation(Motion.step) { upload = nil }
+    }
+
+    private func remove() {
+        withAnimation(Motion.step) { upload = nil }
+    }
+}
+
+/// The black file row inside an upload card, for the Uploading and Uploaded states.
+private struct FileRow: View {
+    let upload: DocumentUpload
+    let onCancel: () -> Void
+    let onRemove: () -> Void
+    @State private var isSpinning = false
+
+    var body: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 8) {
+                Group {
+                    if let thumbnail = upload.thumbnail {
+                        Image(uiImage: thumbnail).resizable().scaledToFill()
+                    } else {
+                        Image(.filePdf)
+                    }
+                }
+                .frame(width: 40, height: 40)
+                .background(Color.grey80)
+                .clipShape(.rect(cornerRadius: 6))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(upload.fileName)
+                        .font(AppFont.interTight(14, relativeTo: .subheadline))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    if upload.isComplete {
+                        HStack(spacing: 6) {
+                            Text("\(upload.sizeText) of \(upload.sizeText)")
+                            Text("·")
+                            HStack(spacing: 4) {
+                                Image(.sealCheckTiny)
+                                Text("Completed")
+                            }
+                        }
+                        .font(AppFont.interTight(12, relativeTo: .caption))
+                        .foregroundStyle(Color.grey50)
+                        .transition(.opacity)
+                    } else {
+                        HStack(spacing: 4) {
+                            Image(.spinner)
+                                .rotationEffect(.degrees(isSpinning ? 360 : 0))
+                                .animation(.linear(duration: 1).repeatForever(autoreverses: false), value: isSpinning)
+                                .onAppear { isSpinning = true }
+                            Text("Uploading...")
+                                .font(AppFont.interTight(12, relativeTo: .caption))
+                                .foregroundStyle(Color.grey50)
+                        }
+                        .transition(.opacity)
+                    }
+                }
+                Spacer(minLength: 8)
+
+                Button(action: upload.isComplete ? onRemove : onCancel) {
+                    Image(upload.isComplete ? .trash : .closeX)
+                        .frame(width: 32, height: 32)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(RowPressStyle())
+                .accessibilityLabel(upload.isComplete ? "Remove \(upload.fileName)" : "Cancel upload")
+            }
+
+            if !upload.isComplete {
+                GeometryReader { proxy in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.grey80)
+                        Capsule().fill(Color.primary50)
+                            .frame(width: proxy.size.width * upload.progress)
+                    }
+                }
+                .frame(height: 4)
+                .transition(.opacity)
+            }
+        }
+        .padding(12)
+        .background(.black, in: .rect(cornerRadius: 12))
+        .animation(Motion.step, value: upload.isComplete)
     }
 }
 
