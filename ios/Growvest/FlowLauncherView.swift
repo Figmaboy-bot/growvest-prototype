@@ -5,6 +5,7 @@ import SwiftUI
 /// To add a flow: build its root view, add a case here, and fill in its details and
 /// `destination`. It then shows up on the launcher automatically.
 enum PrototypeFlow: String, CaseIterable, Identifiable {
+    case home
     case buyShares
     case sellShares
     case kyc
@@ -14,6 +15,7 @@ enum PrototypeFlow: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .home: "Home"
         case .buyShares: "Buy Shares"
         case .sellShares: "Sell Shares"
         case .kyc: "Verify Identity (KYC)"
@@ -23,6 +25,7 @@ enum PrototypeFlow: String, CaseIterable, Identifiable {
 
     var summary: String {
         switch self {
+        case .home: "Investor and business owner dashboards"
         case .buyShares: "Amount → Payment method → Review → PIN → Success"
         case .sellShares: "Shares → Payment destination → Review → PIN → Success"
         case .kyc: "ID card scan → Face verification → Address → Submit"
@@ -32,6 +35,7 @@ enum PrototypeFlow: String, CaseIterable, Identifiable {
 
     var icon: ImageResource {
         switch self {
+        case .home: .tabHome
         case .buyShares: .creditCard
         case .sellShares: .bank
         case .kyc: .aiScan
@@ -42,6 +46,7 @@ enum PrototypeFlow: String, CaseIterable, Identifiable {
     @ViewBuilder
     var destination: some View {
         switch self {
+        case .home: HomeView()
         case .buyShares: TradeView(kind: .buy)
         case .sellShares: TradeView(kind: .sell)
         case .kyc: KYCView()
@@ -95,6 +100,8 @@ struct FlowLauncherView: View {
             var flow: PrototypeFlow?
             if defaults.string(forKey: "demoFlow") == "kyc" || defaults.string(forKey: "demoKYC") != nil {
                 flow = .kyc
+            } else if defaults.string(forKey: "demoFlow") == "home" || defaults.string(forKey: "demoHome") != nil {
+                flow = .home
             } else if defaults.string(forKey: "demoFlow") == "sell" {
                 flow = .sellShares
             } else if defaults.string(forKey: "demoFlow") == "profile" || defaults.string(forKey: "demoProfile") != nil {

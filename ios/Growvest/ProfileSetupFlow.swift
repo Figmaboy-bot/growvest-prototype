@@ -60,9 +60,9 @@ final class ProfileSetupFlow {
     /// Risk appetite slider: 40 ticks (fewer than the Slider component's 48, by request).
     static let riskTickCount = 40
 
-    private(set) var step: Step = .profile
-    /// Which way the last step change went, so screens slide in from the correct side.
-    private(set) var isMovingForward = true
+    /// The screens pushed on top of the profile screen, bound to the navigation stack.
+    var path: [Step] = []
+    var step: Step { path.last ?? .profile }
 
     // Profile
     var photo: Image?
@@ -128,95 +128,101 @@ final class ProfileSetupFlow {
 
     func next() {
         guard stepIndex + 1 < steps.count else { return }
-        isMovingForward = true
-        step = steps[stepIndex + 1]
+        path.append(steps[stepIndex + 1])
     }
 
     /// Returns false on the first screen, where "back" leaves the flow.
     func back() -> Bool {
-        guard stepIndex > 0 else { return false }
-        isMovingForward = false
-        step = steps[stepIndex - 1]
+        guard !path.isEmpty else { return false }
+        path.removeLast()
         return true
     }
 
     #if DEBUG
+    /// Pushes every screen up to `step`, so back still walks through them.
     func jump(to step: Step) {
-        isMovingForward = true
-        self.step = step
+        guard let index = steps.firstIndex(of: step) else { return }
+        path = Array(steps[1...index])
     }
     #endif
 }
 
 // MARK: - Container
 
-/// "Profile Setup": a fixed header (back, title, progress) over screens that slide between steps.
+/// "Profile Setup": a real navigation stack, so screens push and pop like any iOS screen
+/// (including the edge swipe back). The progress bar floats above the stack, just under the
+/// navigation bar, so it stays put while the screens move beneath it.
 struct ProfileSetupView: View {
     @State private var flow = ProfileSetupFlow()
+    /// Where the navigation bar ends, measured from the screens, so the progress bar sits right under it.
+    @State private var navigationBarBottom: CGFloat = 0
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private static let progressTopPadding: CGFloat = 16
+    private static let progressHeight: CGFloat = 6
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                ProgressSegments(count: flow.steps.count, filled: flow.stepIndex + 1)
-                    .padding(.horizontal, 24)
-                    .padding(.top, 16)
-
-                ZStack {
-                    stepView
-                        .id(flow.step)
-                        .transition(stepTransition)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .clipped()
-            }
-            .frame(maxWidth: 480)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color(.systemBackground))
-            .animation(Motion.step, value: flow.step)
-            .animation(Motion.step, value: flow.steps.count)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    if flow.step != .success {
-                        Button { if !flow.back() { dismiss() } } label: { Image(.arrowLeft) }
-                            .modifier(LegacyCircleBackground())
-                            .accessibilityLabel("Back")
-                    }
-                }
-                ToolbarItem(placement: .principal) {
-                    Text("Profile Setup")
-                        .font(AppFont.interTight(16, relativeTo: .headline))
-                        .foregroundStyle(.white)
-                }
-            }
+        NavigationStack(path: $flow.path) {
+            screen(for: .profile)
+                .navigationDestination(for: ProfileSetupFlow.Step.self) { screen(for: $0) }
         }
+        .overlay(alignment: .top) {
+            ProgressSegments(count: flow.steps.count, filled: flow.stepIndex + 1)
+                .padding(.horizontal, 24)
+                .frame(maxWidth: 480)
+                .offset(y: navigationBarBottom + Self.progressTopPadding)
+                .animation(Motion.step, value: flow.stepIndex)
+                .animation(Motion.step, value: flow.steps.count)
+                // The offset is measured from the stack's top edge, so don't add the status bar again.
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+        }
+        .coordinateSpace(.named(Self.coordinateSpace))
         #if DEBUG
         .onAppear(perform: applyDemoLaunchArguments)
         #endif
     }
 
-    @ViewBuilder
-    private var stepView: some View {
-        switch flow.step {
-        case .profile: ProfileStep(flow: flow)
-        case .investor: InvestorStep(flow: flow)
-        case .experience: ExperienceStep(flow: flow)
-        case .business: BusinessStep(flow: flow)
-        case .success: ProfileSuccessStep(flow: flow) { dismiss() }
-        }
-    }
+    private static let coordinateSpace = "ProfileSetup"
 
-    /// Forward, the next screen slides in from the trailing edge; back, from the leading edge.
-    private var stepTransition: AnyTransition {
-        guard !reduceMotion else { return .opacity }
-        let edge: Edge = flow.isMovingForward ? .trailing : .leading
-        let opposite: Edge = flow.isMovingForward ? .leading : .trailing
-        return .asymmetric(
-            insertion: .move(edge: edge).combined(with: .opacity),
-            removal: .move(edge: opposite).combined(with: .opacity)
-        )
+    private func screen(for step: ProfileSetupFlow.Step) -> some View {
+        Group {
+            switch step {
+            case .profile: ProfileStep(flow: flow)
+            case .investor: InvestorStep(flow: flow)
+            case .experience: ExperienceStep(flow: flow)
+            case .business: BusinessStep(flow: flow)
+            case .success: ProfileSuccessStep(flow: flow) { dismiss() }
+            }
+        }
+        // Leave room for the floating progress bar, and keep scrolled content from showing under it.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            Color(.systemBackground)
+                .frame(height: Self.progressTopPadding + Self.progressHeight)
+                .onGeometryChange(for: CGFloat.self) {
+                    $0.frame(in: .named(Self.coordinateSpace)).minY
+                } action: { navigationBarBottom = $0 }
+        }
+        .frame(maxWidth: 480)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.systemBackground))
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                if step != .success {
+                    Button { if !flow.back() { dismiss() } } label: { Image(.arrowLeft) }
+                        .modifier(LegacyCircleBackground())
+                        .accessibilityLabel("Back")
+                }
+            }
+            ToolbarItem(placement: .principal) {
+                Text("Profile Setup")
+                    .font(AppFont.interTight(16, relativeTo: .headline))
+                    .foregroundStyle(.white)
+            }
+        }
     }
 }
 
@@ -355,6 +361,7 @@ private struct TagPicker: View {
             }
         }
         .sensoryFeedback(.selection, trigger: options.filter(isSelected))
+        .hapticSound(trigger: options.filter(isSelected))
     }
 }
 
@@ -552,6 +559,7 @@ private struct ProfileStep: View {
                 }
             }
             .sensoryFeedback(.selection, trigger: flow.role)
+            .hapticSound(trigger: flow.role)
         }
     }
 }
@@ -712,10 +720,13 @@ private struct RiskSlider: View {
         tick = newTick
         if newTick == 0 || newTick == count - 1 {
             edgeHaptic.impactOccurred(intensity: 0.8)
+            HapticSound.play(.rigid)
         } else if crossesLevel {
             levelHaptic.impactOccurred()
+            HapticSound.play(.impact)
         } else {
             selectionHaptic.selectionChanged()
+            HapticSound.play(.selection)
         }
         selectionHaptic.prepare()
     }

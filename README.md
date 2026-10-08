@@ -13,6 +13,7 @@ The repo holds two prototypes:
 
 The app opens on **Growvest Flows**, a launcher listing each flow. Use the back button inside a flow to return to it.
 
+- **Home:** the dashboard, with an Investor / Business Owner switch. Investor shows portfolio value, portfolio distribution and a filterable watchlist; Business Owner shows funds raised, stats and listings with funding progress. You can hide the balance. SwiftHarvest's portfolio card opens Sell and its watchlist row opens Buy. Tap the profile photo to return to the flow list.
 - **Buy Shares:** enter an amount in naira or a number of shares (tap the pill under the big number to switch), pick a payment method, review, enter your PIN or use Face ID, then see the success screen.
 - **Sell Shares:** the same steps for selling from your holding (40 shares at ₦2,500). You can't sell more than you hold, and you must tick a risk acknowledgement before confirming.
 - **Verify Identity (KYC):** a checklist covering ID card scan, face verification and residential address, then submit for review.
@@ -52,7 +53,8 @@ xcrun simctl launch booted com.growvest.prototype -demoAmount 100000 -demoStep r
 
 | Argument | Values |
 |---|---|
-| `-demoFlow` | `sell`, `kyc`, `profile` |
+| `-demoFlow` | `home`, `sell`, `kyc`, `profile` |
+| `-demoHome` | `business`, `hidden` |
 | `-demoAmount` | An amount to pre-type, e.g. `25000` |
 | `-demoStep` (buy/sell) | `payment`, `review`, `pin`, `success`, `swap`, `typing`, `tour` |
 | `-demoKYC` | `idcard`, `face`, `address`, `ready`, `submitted` |
@@ -64,6 +66,7 @@ xcrun simctl launch booted com.growvest.prototype -demoAmount 100000 -demoStep r
 ios/Growvest/
 ├── GrowvestApp.swift          App entry, bundled font registration
 ├── FlowLauncherView.swift     The flow launcher; add new flows to PrototypeFlow
+├── HomeView.swift             Home dashboard: investor and business owner modes, tab bars
 ├── TradeView.swift            Buy/sell amount screen: keypad, value swap, quick picks
 ├── InvestmentFlow.swift       Buy/sell state and rules (TradeKind: .buy / .sell)
 ├── InvestmentSheet.swift      Floating sheet: payment → review → PIN → success
