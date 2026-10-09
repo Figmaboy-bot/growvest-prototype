@@ -10,12 +10,22 @@ enum HapticSound {
 
     static func play(_ kind: Kind) {
         #if targetEnvironment(simulator)
-        Player.shared.play(kind)
+        Player.queue.async { Player.shared.play(kind) }
+        #endif
+    }
+
+    /// Starts the audio engine ahead of the first haptic. Starting it takes long enough to
+    /// stall a tap or a drag if it happens on the main thread when feedback first fires.
+    static func warmUp() {
+        #if targetEnvironment(simulator)
+        Player.queue.async { _ = Player.shared }
         #endif
     }
 
     #if targetEnvironment(simulator)
     private final class Player {
+        /// All audio work runs here, off the main thread.
+        static let queue = DispatchQueue(label: "HapticSound", qos: .userInteractive)
         static let shared = Player()
 
         private let engine = AVAudioEngine()

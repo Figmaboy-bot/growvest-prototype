@@ -7,6 +7,7 @@ struct GrowvestApp: App {
     init() {
         FontRegistry.registerBundledFonts()
         FontRegistry.styleNavigationBars()
+        HapticSound.warmUp()
     }
 
     var body: some Scene {

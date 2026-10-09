@@ -1,3 +1,4 @@
+import ImageIO
 import Observation
 import PhotosUI
 import SwiftUI
@@ -534,7 +535,7 @@ private struct ProfileStep: View {
             .onChange(of: photoItem) { _, item in
                 Task {
                     if let data = try? await item?.loadTransferable(type: Data.self),
-                       let image = UIImage(data: data) {
+                       let image = await ImageDownsampler.image(from: data, maxPointSize: 96) {
                         flow.photo = Image(uiImage: image)
                     }
                 }
@@ -1000,6 +1001,32 @@ enum BusinessDocument: String, CaseIterable, Identifiable {
     }
 }
 
+/// Decodes picked photos at the size they're shown, off the main thread. Decoding a
+/// full-resolution camera photo on the main thread freezes the screen for a moment.
+enum ImageDownsampler {
+    static func image(from data: Data, maxPointSize: CGFloat) async -> UIImage? {
+        await decode(maxPointSize) { CGImageSourceCreateWithData(data as CFData, nil) }
+    }
+
+    static func image(at url: URL, maxPointSize: CGFloat) async -> UIImage? {
+        await decode(maxPointSize) { CGImageSourceCreateWithURL(url as CFURL, nil) }
+    }
+
+    private static func decode(_ maxPointSize: CGFloat, source: @escaping @Sendable () -> CGImageSource?) async -> UIImage? {
+        let maxPixelSize = maxPointSize * 3
+        return await Task.detached(priority: .userInitiated) {
+            guard let source = source() else { return nil }
+            let options: [CFString: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceShouldCacheImmediately: true,
+                kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+            ]
+            return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary).map(UIImage.init(cgImage:))
+        }.value
+    }
+}
+
 /// A picked file and how far its (simulated) upload has got.
 struct DocumentUpload: Equatable {
     var fileName: String
@@ -1093,20 +1120,24 @@ private struct UploadDocumentCard: View {
         .fileImporter(isPresented: $isImportingFile, allowedContentTypes: [.pdf, .jpeg, .png]) { result in
             guard case .success(let url) = result else { return }
             let isScoped = url.startAccessingSecurityScopedResource()
-            defer { if isScoped { url.stopAccessingSecurityScopedResource() } }
             let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-            let thumbnail = url.pathExtension.lowercased() == "pdf" ? nil : UIImage(contentsOfFile: url.path)
-            start(DocumentUpload(fileName: url.lastPathComponent, byteCount: size, thumbnail: thumbnail))
+            Task {
+                defer { if isScoped { url.stopAccessingSecurityScopedResource() } }
+                let thumbnail = url.pathExtension.lowercased() == "pdf"
+                    ? nil : await ImageDownsampler.image(at: url, maxPointSize: 40)
+                start(DocumentUpload(fileName: url.lastPathComponent, byteCount: size, thumbnail: thumbnail))
+            }
         }
         .photosPicker(isPresented: $isPickingPhoto, selection: $photoItem, matching: .images)
         .onChange(of: photoItem) { _, item in
             guard let item else { return }
             Task {
                 let data = try? await item.loadTransferable(type: Data.self)
+                let thumbnail = if let data { await ImageDownsampler.image(from: data, maxPointSize: 40) } else { UIImage?.none }
                 let ext = item.supportedContentTypes.first?.preferredFilenameExtension ?? "jpg"
                 start(DocumentUpload(fileName: "\(kind.title.replacingOccurrences(of: " ", with: "-")).\(ext)",
                                      byteCount: data?.count ?? 0,
-                                     thumbnail: data.flatMap(UIImage.init(data:))))
+                                     thumbnail: thumbnail))
                 photoItem = nil
             }
         }
