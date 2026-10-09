@@ -5,8 +5,9 @@ import SwiftUI
 /// - Investor: portfolio value, portfolio distribution and a filterable watchlist.
 /// - Business owner: funds raised, stats and the owner's listings with funding progress.
 ///
-/// Each mode has its own floating tab bar. SwiftHarvest is wired into the trade flows:
-/// its portfolio card opens Sell, its watchlist row opens Buy.
+/// Each mode has its own floating tab bar. Portfolio cards and watchlist rows open the
+/// business's page (with Buy and Sell); search opens Explore and the bell opens Notifications.
+/// Those screens are in HomeScreens.swift.
 struct HomeView: View {
     enum Mode: String, CaseIterable, Identifiable {
         case investor = "Investor"
@@ -18,11 +19,42 @@ struct HomeView: View {
     @State private var isBalanceHidden = false
     @State private var investorTab: InvestorTab = .home
     @State private var businessTab: BusinessTab = .home
-    @State private var trade: TradeKind?
+    @State private var path: [HomeRoute] = []
+    @State private var recentSearches = ["SafeBond Finance", "CapitalSpring Ltd.", "SwiftHarvest Ventures"]
     @Namespace private var modePill
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
+        NavigationStack(path: $path) {
+            dashboard
+                .toolbar(.hidden, for: .navigationBar)
+                .navigationDestination(for: HomeRoute.self) { route in
+                    switch route {
+                    case .company(let name):
+                        if let company = Company.named(name) { CompanyDetailView(company: company) }
+                    case .explore: ExploreView(recentNames: $recentSearches)
+                    case .notifications: NotificationsView()
+                    }
+                }
+        }
+        #if DEBUG
+        .onAppear {
+            let defaults = UserDefaults.standard
+            switch defaults.string(forKey: "demoHome") {
+            case "business": mode = .businessOwner
+            case "hidden": isBalanceHidden = true
+            case "explore": path = [.explore]
+            case "notifications": path = [.notifications]
+            case "company": path = [.company(Company.swiftHarvest.name)]
+            case "coremedix": path = [.company("CoreMedix Labs")]
+            case "portfolio": investorTab = .portfolio
+            default: break
+            }
+        }
+        #endif
+    }
+
+    private var dashboard: some View {
         ZStack(alignment: .bottom) {
             Group {
                 if isOnHomeTab {
@@ -36,7 +68,7 @@ struct HomeView: View {
                                 BalanceSummary(mode: mode, isHidden: $isBalanceHidden)
                                 Group {
                                     switch mode {
-                                    case .investor: InvestorSections(trade: $trade)
+                                    case .investor: InvestorSections()
                                     case .businessOwner: BusinessSections()
                                     }
                                 }
@@ -54,6 +86,9 @@ struct HomeView: View {
                         .frame(maxWidth: .infinity)
                     }
                     .scrollIndicators(.hidden)
+                } else if mode == .investor && investorTab == .portfolio {
+                    PortfolioView()
+                        .transition(.opacity)
                 } else {
                     TabPlaceholder(title: placeholderTitle) { dismiss() }
                 }
@@ -65,16 +100,6 @@ struct HomeView: View {
         }
         .background(Color(.systemBackground))
         .animation(Motion.step, value: mode)
-        .fullScreenCover(item: $trade) { kind in
-            TradeView(kind: kind)
-        }
-        #if DEBUG
-        .onAppear {
-            let defaults = UserDefaults.standard
-            if defaults.string(forKey: "demoHome") == "business" { mode = .businessOwner }
-            if defaults.string(forKey: "demoHome") == "hidden" { isBalanceHidden = true }
-        }
-        #endif
     }
 
     private var isOnHomeTab: Bool {
@@ -112,10 +137,10 @@ struct HomeView: View {
             Spacer()
             HStack(spacing: 8) {
                 if mode == .investor {
-                    RoundIconButton(icon: .magnifyingGlass, label: "Search")
+                    RoundIconButton(icon: .magnifyingGlass, label: "Search") { path.append(.explore) }
                         .transition(.scale(scale: 0.6).combined(with: .opacity))
                 }
-                RoundIconButton(icon: .bell, label: "Notifications")
+                RoundIconButton(icon: .bell, label: "Notifications") { path.append(.notifications) }
             }
         }
     }
@@ -263,7 +288,6 @@ private struct WatchItem: Identifiable {
 }
 
 private struct InvestorSections: View {
-    @Binding var trade: TradeKind?
     @State private var filter = "All watchlist"
 
     private let holdings = [
@@ -290,9 +314,7 @@ private struct InvestorSections: View {
                 SectionHeader(title: "Portfolio Distribution") { ViewAllButton() }
                 HStack(spacing: 8) {
                     ForEach(holdings) { holding in
-                        Button {
-                            if holding.name == "SwiftHarvest Ventures" { trade = .sell }
-                        } label: {
+                        NavigationLink(value: HomeRoute.company(holding.name)) {
                             StatCard(name: holding.name, value: holding.value.naira, change: holding.change) {
                                 Image(holding.logo)
                             }
@@ -326,9 +348,7 @@ private struct InvestorSections: View {
                             .transition(.opacity)
                     }
                     ForEach(visibleWatchlist) { item in
-                        Button {
-                            if item.name == "SwiftHarvest Ventures" { trade = .buy }
-                        } label: {
+                        NavigationLink(value: HomeRoute.company(item.name)) {
                             WatchRow(item: item)
                         }
                         .buttonStyle(RowPressStyle())
@@ -341,8 +361,8 @@ private struct InvestorSections: View {
     }
 }
 
-/// The grey pill of watchlist filters; the cyan selection slides between them.
-private struct FilterBar: View {
+/// The grey pill of watchlist (and Explore sector) filters; the cyan selection slides between them.
+struct FilterBar: View {
     let options: [String]
     @Binding var selection: String
     @Namespace private var pill
@@ -600,7 +620,7 @@ private struct StatCard<Icon: View>: View {
 }
 
 /// Green (up) or red (down) pill with the design's trend arrow.
-private struct ChangeBadge: View {
+struct ChangeBadge: View {
     enum Size { case small, tiny }
     let text: String
     let isUp: Bool
@@ -626,9 +646,10 @@ private struct ChangeBadge: View {
 private struct RoundIconButton: View {
     let icon: ImageResource
     let label: String
+    let action: () -> Void
 
     var body: some View {
-        Button {} label: { Image(icon) }
+        Button(action: action) { Image(icon) }
             .buttonStyle(CircleIconButtonStyle())
             .accessibilityLabel(label)
     }
@@ -682,33 +703,43 @@ private enum BusinessTab: String, HomeTab {
 }
 
 /// The floating dark-teal tab bar: the selected tab is a cyan capsule with its icon and
-/// name, which slides to whichever tab you tap; the others show just their icon.
+/// name, the others show just their icon. Tap a tab, or drag along the bar and the pill
+/// follows your finger from tab to tab. Every tab's width eases with the same spring as
+/// the pill, and the name slides out of the icon rather than popping in.
 private struct FloatingTabBar<Tab: HomeTab>: View {
     let tabs: [Tab]
     @Binding var selection: Tab
     @Namespace private var pill
+    /// Where each tab sits in the bar, to find the one under a dragging finger.
+    @State private var frames: [Tab: CGRect] = [:]
+    @State private var isDragging = false
 
     /// rgba(0,0,0,0.8) over the brand cyan, as in the design.
     private static var background: Color { Color(red: 0, green: 43 / 255, blue: 49 / 255) }
+    /// One spring for taps and drags, so the pill always moves the same way.
+    private static var slide: Animation { .spring(duration: 0.35, bounce: 0.18) }
+    private static var space: String { "FloatingTabBar" }
 
     var body: some View {
         HStack(spacing: 0) {
             ForEach(tabs) { tab in
                 let isSelected = tab == selection
-                Button {
-                    withAnimation(.spring(duration: 0.4, bounce: 0.2)) { selection = tab }
-                } label: {
-                    HStack(spacing: 4) {
+                Button { select(tab) } label: {
+                    HStack(spacing: 0) {
                         Image(tab.icon)
                             .renderingMode(.template)
                             .foregroundStyle(isSelected ? .black : .white)
-                        if isSelected {
-                            Text(tab.title)
-                                .font(AppFont.interTight(14, relativeTo: .subheadline))
-                                .foregroundStyle(.black)
-                                .fixedSize()
-                                .transition(.opacity.combined(with: .scale(scale: 0.8, anchor: .leading)))
-                        }
+                        // Always laid out, so it can widen out of the icon instead of popping in.
+                        Text(tab.title)
+                            .font(AppFont.interTight(14, relativeTo: .subheadline))
+                            .foregroundStyle(.black)
+                            .fixedSize()
+                            .padding(.leading, 4)
+                            .frame(width: isSelected ? nil : 0, alignment: .leading)
+                            .opacity(isSelected ? 1 : 0)
+                            .blur(radius: isSelected ? 0 : 3)
+                            .clipped()
+                            .accessibilityHidden(true)
                     }
                     .padding(.horizontal, isSelected ? 24 : 0)
                     .frame(maxWidth: isSelected ? nil : .infinity)
@@ -724,6 +755,7 @@ private struct FloatingTabBar<Tab: HomeTab>: View {
                     .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: { frames[tab] = $0 }
                 .accessibilityLabel(tab.title)
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
@@ -731,8 +763,32 @@ private struct FloatingTabBar<Tab: HomeTab>: View {
         .padding(8)
         .frame(width: 300)
         .background(Capsule().fill(Self.background.opacity(0.96)))
-        .shadow(color: .black.opacity(0.4), radius: 16, y: 8)
+        .coordinateSpace(.named(Self.space))
+        .scaleEffect(isDragging ? 1.03 : 1)
+        .shadow(color: .black.opacity(isDragging ? 0.5 : 0.4), radius: isDragging ? 20 : 16, y: 8)
+        .gesture(scrub)
         .sensoryFeedback(.selection, trigger: selection)
+        .hapticSound(trigger: selection)
+    }
+
+    /// Dragging along the bar selects whichever tab is under the finger.
+    private var scrub: some Gesture {
+        DragGesture(minimumDistance: 6, coordinateSpace: .named(Self.space))
+            .onChanged { value in
+                if !isDragging { withAnimation(Motion.press) { isDragging = true } }
+                let x = value.location.x
+                if let nearest = tabs.min(by: { abs((frames[$0]?.midX ?? 0) - x) < abs((frames[$1]?.midX ?? 0) - x) }) {
+                    select(nearest)
+                }
+            }
+            .onEnded { _ in
+                withAnimation(Motion.press) { isDragging = false }
+            }
+    }
+
+    private func select(_ tab: Tab) {
+        guard tab != selection else { return }
+        withAnimation(Self.slide) { selection = tab }
     }
 }
 
@@ -746,6 +802,8 @@ private struct TabPlaceholder: View {
             Text(title)
                 .font(AppFont.interTight(24, relativeTo: .title2))
                 .foregroundStyle(.white)
+                // Morphs between tab names instead of overlapping them while switching.
+                .contentTransition(.interpolate)
             Text("This tab isn't part of the prototype yet.")
                 .font(AppFont.interTight(14, relativeTo: .subheadline))
                 .foregroundStyle(Color.grey50)

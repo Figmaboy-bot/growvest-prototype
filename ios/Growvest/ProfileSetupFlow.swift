@@ -22,6 +22,9 @@ final class ProfileSetupFlow {
 
     enum Step: Hashable {
         case profile, investor, experience, business, verification, success
+        /// Shown between submitting the documents and success. It isn't one of `steps`, so it
+        /// has no progress segment of its own.
+        case verifying
     }
 
     struct Country: Hashable, Identifiable {
@@ -109,7 +112,7 @@ final class ProfileSetupFlow {
         }
     }
 
-    var stepIndex: Int { steps.firstIndex(of: step) ?? 0 }
+    var stepIndex: Int { steps.firstIndex(of: step == .verifying ? .verification : step) ?? 0 }
 
     var riskLevel: String {
         switch Double(riskTick) / Double(Self.riskTickCount - 1) {
@@ -131,9 +134,21 @@ final class ProfileSetupFlow {
             !businessName.trimmingCharacters(in: .whitespaces).isEmpty && industry != nil && (Int(fundingGoal) ?? 0) > 0
         case .verification:
             allDocumentsUploaded
+        case .verifying:
+            false
         case .success:
             true
         }
+    }
+
+    func submitForVerification() {
+        path.append(.verifying)
+    }
+
+    /// Swaps the verifying screen for success, so back never returns to it.
+    func finishVerification() {
+        guard step == .verifying else { return }
+        path[path.count - 1] = .success
     }
 
     func next() {
@@ -204,6 +219,7 @@ struct ProfileSetupView: View {
             case .experience: ExperienceStep(flow: flow)
             case .business: BusinessStep(flow: flow)
             case .verification: VerificationStep(flow: flow)
+            case .verifying: VerifyingStep(flow: flow)
             case .success: ProfileSuccessStep(flow: flow) { dismiss() }
             }
         }
@@ -222,7 +238,7 @@ struct ProfileSetupView: View {
         .navigationBarBackButtonHidden(true)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                if step != .success {
+                if step != .success && step != .verifying {
                     Button { if !flow.back() { dismiss() } } label: { Image(.arrowLeft) }
                         .modifier(LegacyCircleBackground())
                         .accessibilityLabel("Back")
@@ -266,6 +282,12 @@ extension ProfileSetupView {
         case "experience": flow.jump(to: .experience)
         case "business", "both": flow.jump(to: .business)
         case "verification": flow.jump(to: .verification)
+        case "verifying":
+            for kind in BusinessDocument.allCases {
+                flow.documents[kind] = DocumentUpload(fileName: "\(kind.title).pdf", byteCount: 131_072, progress: 1)
+            }
+            flow.jump(to: .verification)
+            flow.submitForVerification()
         case "verifymix":                       // one uploaded, one mid-upload, the rest empty
             flow.documents[.registration] = DocumentUpload(fileName: "CAC-Certificate.pdf", byteCount: 131_072, progress: 1)
             flow.documents[.address] = DocumentUpload(fileName: "Lease-Agreement.pdf", byteCount: 245_760, progress: 0.45)
@@ -1045,13 +1067,105 @@ private struct VerificationStep: View {
     var body: some View {
         StepScaffold(title: "Verify Your Business",
                      message: "Upload a few documents to verify your business and build trust with potential investors.",
-                     buttonTitle: "Submit for Verification", canContinue: flow.canContinue, onContinue: flow.next) {
+                     buttonTitle: "Submit for Verification", canContinue: flow.canContinue,
+                     onContinue: flow.submitForVerification) {
             VStack(spacing: 12) {
                 ForEach(BusinessDocument.allCases) { kind in
                     UploadDocumentCard(kind: kind, upload: $flow.documents[kind])
                 }
             }
         }
+    }
+}
+
+/// "Verifying Your Business": the hourglass turns while each document is checked off in
+/// turn, then the flow moves on to success by itself. The review is simulated.
+private struct VerifyingStep: View {
+    let flow: ProfileSetupFlow
+    @State private var checked = 0
+    @State private var hourglassTurns = 0.0
+    @State private var isSpinning = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private let documents = BusinessDocument.allCases
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 40) {
+                VStack(spacing: 24) {
+                    Image(.hourglass)
+                        .resizable()
+                        .frame(width: 96, height: 96)   // matches the success seal
+                        .rotationEffect(.degrees(hourglassTurns * 180))
+                    KYCHeading(title: "Verifying Your Business",
+                               message: "We're checking your documents. This only takes a moment, so please keep the app open.",
+                               alignment: .center)
+                }
+                .padding(.top, 32)
+
+                VStack(spacing: 0) {
+                    ForEach(Array(documents.enumerated()), id: \.element) { index, kind in
+                        row(kind, isDone: index < checked, isChecking: index == checked)
+                        if index < documents.count - 1 {
+                            Divider().overlay(Color.grey70)
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .background(Color.grey80, in: .rect(cornerRadius: 20))
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 24)
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .sensoryFeedback(.selection, trigger: checked)
+        .hapticSound(trigger: checked)
+        .task {
+            for _ in documents {
+                try? await Task.sleep(for: .milliseconds(650))
+                guard !Task.isCancelled else { return }
+                withAnimation(Motion.select) { checked += 1 }
+                if checked.isMultiple(of: 2) {
+                    withAnimation(reduceMotion ? nil : .spring(duration: 0.7, bounce: 0.2)) { hourglassTurns += 1 }
+                }
+            }
+            try? await Task.sleep(for: .milliseconds(600))
+            guard !Task.isCancelled else { return }
+            flow.finishVerification()
+        }
+    }
+
+    private func row(_ kind: BusinessDocument, isDone: Bool, isChecking: Bool) -> some View {
+        HStack(spacing: 12) {
+            Text(kind.title)
+                .font(AppFont.interTight(14, relativeTo: .subheadline))
+                .foregroundStyle(isDone || isChecking ? .white : Color.grey50)
+            Spacer(minLength: 8)
+            ZStack {
+                if isDone {
+                    Image(.sealCheckTiny)
+                        .resizable()
+                        .frame(width: 20, height: 20)
+                        .transition(.scale(scale: 0.5).combined(with: .opacity))
+                } else if isChecking {
+                    Image(.spinner)
+                        .rotationEffect(.degrees(isSpinning ? 360 : 0))
+                        .animation(.linear(duration: 1).repeatForever(autoreverses: false), value: isSpinning)
+                        .onAppear { isSpinning = true }
+                        .transition(.opacity)
+                } else {
+                    Text("Waiting")
+                        .font(AppFont.interTight(12, relativeTo: .caption))
+                        .foregroundStyle(Color.grey50)
+                        .fixedSize()
+                        .transition(.opacity)
+                }
+            }
+            .frame(minWidth: 20, minHeight: 20)
+        }
+        .padding(.vertical, 16)
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(isDone ? "Checked" : isChecking ? "Checking" : "Waiting")
     }
 }
 

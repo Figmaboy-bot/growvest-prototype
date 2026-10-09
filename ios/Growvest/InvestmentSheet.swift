@@ -220,7 +220,9 @@ private struct ReviewStep: View {
                 LabeledSection(title: "Business") {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack(spacing: 8) {
-                            Image(.businessLogo)
+                            Image(flow.business.logo)
+                                .resizable()
+                                .frame(width: 28, height: 28)
                             Text(flow.business.name)
                                 .font(AppFont.interTight(14, relativeTo: .subheadline))
                                 .foregroundStyle(.white)

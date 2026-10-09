@@ -114,9 +114,11 @@ struct ChipButtonStyle: ButtonStyle {
 
 /// The 40pt round back button used inside the bottom sheets.
 struct CircleIconButtonStyle: ButtonStyle {
+    var size: CGFloat = 40
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .frame(width: 40, height: 40)
+            .frame(width: size, height: size)
             .background(Circle().fill(Color.grey80))
             .contentShape(Circle())
             .scaleEffect(configuration.isPressed ? 0.9 : 1)

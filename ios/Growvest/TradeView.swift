@@ -11,8 +11,8 @@ struct TradeView: View {
     /// PIN step is up the screen keeps this height, pinned to the top.
     @State private var restingHeight: CGFloat?
 
-    init(kind: TradeKind) {
-        _flow = State(initialValue: InvestmentFlow(kind: kind))
+    init(kind: TradeKind, business: Business = .swiftHarvest, holding: Holding = .swiftHarvest) {
+        _flow = State(initialValue: InvestmentFlow(kind: kind, business: business, holding: holding))
     }
 
     var body: some View {

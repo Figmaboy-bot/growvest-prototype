@@ -7,6 +7,7 @@ struct Business {
     let tags: [String]
     let currentValue: Double
     let pricePerShare: Double
+    var logo: ImageResource = .businessLogo
 
     static let swiftHarvest = Business(
         name: "SwiftHarvest Ventures",
@@ -62,8 +63,10 @@ enum PaymentMethod: String, CaseIterable, Identifiable {
 final class InvestmentFlow {
     let kind: TradeKind
 
-    init(kind: TradeKind = .buy) {
+    init(kind: TradeKind = .buy, business: Business = .swiftHarvest, holding: Holding = .swiftHarvest) {
         self.kind = kind
+        self.business = business
+        self.holding = holding
     }
 
     enum Step: Hashable {
@@ -76,8 +79,8 @@ final class InvestmentFlow {
     /// Quick picks while entering shares (Figma "Frame 1618874416").
     static let quickShares = [5, 10, 50, 100]
 
-    let business = Business.swiftHarvest
-    let holding = Holding.swiftHarvest
+    let business: Business
+    let holding: Holding
 
     var isSelling: Bool { kind == .sell }
     var pricePerShare: Double { isSelling ? holding.pricePerShare : business.pricePerShare }
