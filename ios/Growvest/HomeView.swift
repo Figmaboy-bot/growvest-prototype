@@ -48,6 +48,7 @@ struct HomeView: View {
             case "company": path = [.company(Company.swiftHarvest.name)]
             case "coremedix": path = [.company("CoreMedix Labs")]
             case "portfolio": investorTab = .portfolio
+            case "wallet": investorTab = .wallet
             default: break
             }
         }
@@ -88,6 +89,9 @@ struct HomeView: View {
                     .scrollIndicators(.hidden)
                 } else if mode == .investor && investorTab == .portfolio {
                     PortfolioView()
+                        .transition(.opacity)
+                } else if mode == .investor && investorTab == .wallet {
+                    WalletView(isBalanceHidden: $isBalanceHidden)
                         .transition(.opacity)
                 } else {
                     TabPlaceholder(title: placeholderTitle) { dismiss() }
@@ -659,7 +663,10 @@ private struct RoundIconButton: View {
 
 private protocol HomeTab: Hashable, CaseIterable, Identifiable where AllCases == [Self] {
     var title: String { get }
+    /// Outline, for tabs that aren't selected (24pt, tinted white).
     var icon: ImageResource { get }
+    /// Filled, for the selected tab's cyan pill (20pt, drawn as is).
+    var activeIcon: ImageResource { get }
 }
 
 private enum InvestorTab: String, HomeTab {
@@ -675,10 +682,18 @@ private enum InvestorTab: String, HomeTab {
     }
     var icon: ImageResource {
         switch self {
-        case .home: .tabHome
+        case .home: .tabHomeOutline
         case .portfolio: .tabChart
-        case .wallet: .tabMoneyBag
+        case .wallet: .tabWallet
         case .profile: .tabUser
+        }
+    }
+    var activeIcon: ImageResource {
+        switch self {
+        case .home: .tabHomeFilled
+        case .portfolio: .tabChartFilled
+        case .wallet: .tabWalletFilled
+        case .profile: .tabUserFilled
         }
     }
 }
@@ -695,9 +710,16 @@ private enum BusinessTab: String, HomeTab {
     }
     var icon: ImageResource {
         switch self {
-        case .home: .tabHome
+        case .home: .tabHomeOutline
         case .listings: .tabBriefcase
         case .profile: .tabUser
+        }
+    }
+    var activeIcon: ImageResource {
+        switch self {
+        case .home: .tabHomeFilled
+        case .listings: .tabBriefcaseFilled
+        case .profile: .tabUserFilled
         }
     }
 }
@@ -726,9 +748,18 @@ private struct FloatingTabBar<Tab: HomeTab>: View {
                 let isSelected = tab == selection
                 Button { select(tab) } label: {
                     HStack(spacing: 0) {
-                        Image(tab.icon)
-                            .renderingMode(.template)
-                            .foregroundStyle(isSelected ? .black : .white)
+                        // Outline when idle, filled when selected; the two cross-fade.
+                        ZStack {
+                            Image(tab.icon)
+                                .renderingMode(.template)
+                                .foregroundStyle(.white)
+                                .opacity(isSelected ? 0 : 1)
+                                .scaleEffect(isSelected ? 0.8 : 1)
+                            Image(tab.activeIcon)
+                                .opacity(isSelected ? 1 : 0)
+                                .scaleEffect(isSelected ? 1 : 1.2)
+                        }
+                        .frame(width: 24, height: 24)
                         // Always laid out, so it can widen out of the icon instead of popping in.
                         Text(tab.title)
                             .font(AppFont.interTight(14, relativeTo: .subheadline))
