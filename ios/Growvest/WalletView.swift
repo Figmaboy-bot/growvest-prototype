@@ -72,8 +72,9 @@ struct WalletView: View {
                                     .padding(.vertical, 32)
                                     .transition(.opacity)
                             }
-                            ForEach(visible) { transaction in
+                            ForEach(Array(visible.enumerated()), id: \.element.id) { index, transaction in
                                 TransactionRow(transaction: transaction, isHidden: isBalanceHidden)
+                                    .reloadEntrance(order: index)
                                     .transition(.opacity.combined(with: .move(edge: .top)))
                             }
                         }
@@ -88,6 +89,7 @@ struct WalletView: View {
             .frame(maxWidth: .infinity)
         }
         .scrollIndicators(.hidden)
+        .pullToRefresh()
         .onChange(of: filter) { showsAll = false }
     }
 

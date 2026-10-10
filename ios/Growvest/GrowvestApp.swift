@@ -8,6 +8,8 @@ struct GrowvestApp: App {
         FontRegistry.registerBundledFonts()
         FontRegistry.styleNavigationBars()
         HapticSound.warmUp()
+        // The pull-to-refresh spinner is drawn by UIKit, so SwiftUI's tint doesn't reach it.
+        UIRefreshControl.appearance().tintColor = UIColor(named: "Primary50")
     }
 
     var body: some Scene {

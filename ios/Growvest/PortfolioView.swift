@@ -36,6 +36,7 @@ struct PortfolioView: View {
                     }
                 }
                 .id(section)
+                .reloadEntrance()
                 .transition(.asymmetric(
                     insertion: .move(edge: section == .overview ? .leading : .trailing).combined(with: .opacity),
                     removal: .move(edge: section == .overview ? .trailing : .leading).combined(with: .opacity)
@@ -48,6 +49,7 @@ struct PortfolioView: View {
             .frame(maxWidth: .infinity)
         }
         .scrollIndicators(.hidden)
+        .pullToRefresh()
         .animation(Motion.step, value: section)
         // Each view starts from the top, not wherever the other one was scrolled to.
         .onChange(of: section) { withAnimation(Motion.step) { scroller.scrollTo(Self.top, anchor: .top) } }

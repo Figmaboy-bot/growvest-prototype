@@ -34,6 +34,9 @@ struct HomeView: View {
                         if let company = Company.named(name) { CompanyDetailView(company: company) }
                     case .explore: ExploreView(recentNames: $recentSearches)
                     case .notifications: NotificationsView()
+                    case .portfolioDistribution: PortfolioDistributionView()
+                    case .listing(let name):
+                        if let listing = OwnerListing.named(name) { ListingDetailView(listing: listing) }
                     }
                 }
         }
@@ -42,11 +45,14 @@ struct HomeView: View {
             let defaults = UserDefaults.standard
             switch defaults.string(forKey: "demoHome") {
             case "business": mode = .businessOwner
+            case "listing": mode = .businessOwner; path = [.listing("SafeBond Finance")]
+            case "listing-trading": mode = .businessOwner; path = [.listing("StitchWorks Atelier")]
             case "hidden": isBalanceHidden = true
             case "explore": path = [.explore]
             case "notifications": path = [.notifications]
             case "company": path = [.company(Company.swiftHarvest.name)]
             case "coremedix": path = [.company("CoreMedix Labs")]
+            case "distribution": path = [.portfolioDistribution]
             case "portfolio": investorTab = .portfolio
             case "wallet": investorTab = .wallet
             default: break
@@ -87,6 +93,7 @@ struct HomeView: View {
                         .frame(maxWidth: .infinity)
                     }
                     .scrollIndicators(.hidden)
+                    .pullToRefresh()
                 } else if mode == .investor && investorTab == .portfolio {
                     PortfolioView()
                         .transition(.opacity)
@@ -212,9 +219,13 @@ extension TradeKind: Identifiable {
 private struct BalanceSummary: View {
     let mode: HomeView.Mode
     @Binding var isHidden: Bool
+    @Environment(\.reloadCount) private var reloads
 
     private var title: String { mode == .investor ? "Total Portfolio Value" : "Total Funds Raised" }
-    private var amount: Double { mode == .investor ? 215_060.80 : 3_215_060.80 }
+    /// Each refresh brings in a slightly newer figure, so the number visibly ticks.
+    private var amount: Double {
+        mode == .investor ? 215_060.80 + Double(reloads) * 27.53 : 3_215_060.80 + Double(reloads) * 1_250
+    }
     private var change: String {
         let figure = isHidden ? "₦••••" : (mode == .investor ? "₦5,161.46" : "₦32,762.46")
         return "+\(figure) " + (mode == .investor ? "Today’s Profit" : "Increase in funds")
@@ -293,6 +304,7 @@ private struct WatchItem: Identifiable {
 
 private struct InvestorSections: View {
     @State private var filter = "All watchlist"
+    @State private var openedCompany: Company?
 
     private let holdings = [
         PortfolioItem(name: "SwiftHarvest Ventures", logo: .logoSwiftHarvest40, value: 45_162.77, change: 12),
@@ -302,10 +314,10 @@ private struct InvestorSections: View {
     private static let filters = ["All watchlist", "Agriculture", "Tech", "Fashion", "Gaming"]
 
     private let watchlist = [
-        WatchItem(name: "TroveMart", sector: "E-commerce", filter: "Tech", logo: .logoTroveMart, price: 45_162.77, change: 1.4),
-        WatchItem(name: "Suji’s Fashion House", sector: "Fashion", filter: "Fashion", logo: .logoSuji, price: 28_904.50, change: -2.9),
-        WatchItem(name: "StitchWorks Atelier", sector: "Fashion", filter: "Fashion", logo: .logoSewing52, price: 12_310.00, change: 1.4),
-        WatchItem(name: "SwiftHarvest Ventures", sector: "AgriTech", filter: "Agriculture", logo: .logoSwiftHarvest40, price: 62.99, change: 3.2),
+        WatchItem(name: "TroveMart", sector: "E-commerce", filter: "Tech", logo: .logoTroveMart, price: 90.39, change: 1.4),
+        WatchItem(name: "Suji’s Fashion House", sector: "Fashion", filter: "Fashion", logo: .logoSuji, price: 84.53, change: -2.9),
+        WatchItem(name: "StitchWorks Atelier", sector: "Fashion", filter: "Fashion", logo: .logoSewing52, price: 224, change: 1.4),
+        WatchItem(name: "SwiftHarvest Ventures", sector: "AgriTech", filter: "Agriculture", logo: .logoSwiftHarvest40, price: 50.18, change: 3.2),
     ]
 
     private var visibleWatchlist: [WatchItem] {
@@ -315,15 +327,18 @@ private struct InvestorSections: View {
     var body: some View {
         VStack(spacing: 24) {
             VStack(spacing: 12) {
-                SectionHeader(title: "Portfolio Distribution") { ViewAllButton() }
+                SectionHeader(title: "Portfolio Distribution") {
+                    NavigationLink(value: HomeRoute.portfolioDistribution) { ViewAllLabel() }
+                }
                 HStack(spacing: 8) {
-                    ForEach(holdings) { holding in
+                    ForEach(Array(holdings.enumerated()), id: \.element.id) { index, holding in
                         NavigationLink(value: HomeRoute.company(holding.name)) {
                             StatCard(name: holding.name, value: holding.value.naira, change: holding.change) {
                                 Image(holding.logo)
                             }
                         }
                         .buttonStyle(RowPressStyle())
+                        .reloadEntrance(order: index)
                     }
                 }
             }
@@ -351,17 +366,20 @@ private struct InvestorSections: View {
                             .padding(.vertical, 32)
                             .transition(.opacity)
                     }
-                    ForEach(visibleWatchlist) { item in
-                        NavigationLink(value: HomeRoute.company(item.name)) {
+                    ForEach(Array(visibleWatchlist.enumerated()), id: \.element.id) { index, item in
+                        // A watchlist business opens over the dashboard, sliding up from the bottom.
+                        Button { openedCompany = Company.named(item.name) } label: {
                             WatchRow(item: item)
                         }
                         .buttonStyle(RowPressStyle())
+                        .reloadEntrance(order: holdings.count + index)
                         .transition(.opacity.combined(with: .move(edge: .top)))
                     }
                 }
                 .animation(Motion.step, value: filter)
             }
         }
+        .fullScreenCover(item: $openedCompany) { CompanyDetailView(company: $0) }
     }
 }
 
@@ -439,22 +457,8 @@ private struct WatchRow: View {
 
 // MARK: - Business owner
 
-private struct Listing: Identifiable {
-    let name: String
-    let logo: ImageResource
-    let raised: Double
-    let goal: Double
-    var id: String { name }
-    var progress: Double { min(raised / goal, 1) }
-    var isFullyRaised: Bool { raised >= goal }
-}
-
 private struct BusinessSections: View {
-    private let listings = [
-        Listing(name: "SafeBond Finance", logo: .logoSafeBond, raised: 3_000_000, goal: 5_000_000),
-        Listing(name: "CapitalSpring Ltd.", logo: .logoCapitalSpring, raised: 650_000, goal: 5_000_000),
-        Listing(name: "StitchWorks Atelier", logo: .logoSewing52, raised: 5_000_000, goal: 5_000_000),
-    ]
+    private let listings = OwnerListing.all
 
     var body: some View {
         VStack(spacing: 24) {
@@ -464,14 +468,22 @@ private struct BusinessSections: View {
                     .foregroundStyle(.white)
                 HStack(spacing: 8) {
                     StatCard(name: "Active Listings", value: "8", change: nil) { StatIcon(.statBriefcase) }
+                        .reloadEntrance(order: 0)
                     StatCard(name: "Active Investors", value: "49", change: 12) { StatIcon(.statUsers) }
+                        .reloadEntrance(order: 1)
                 }
             }
 
             VStack(spacing: 12) {
                 SectionHeader(title: "Your Listings") { ViewAllButton() }
                 VStack(spacing: 8) {
-                    ForEach(listings) { ListingCard(listing: $0) }
+                    ForEach(Array(listings.enumerated()), id: \.element.id) { index, listing in
+                        NavigationLink(value: HomeRoute.listing(listing.name)) {
+                            ListingCard(listing: listing)
+                        }
+                        .buttonStyle(RowPressStyle())
+                        .reloadEntrance(order: 2 + index)
+                    }
                 }
             }
         }
@@ -492,7 +504,7 @@ private struct StatIcon: View {
 /// A listing's funding card. The bar's colour follows its progress: orange while it's
 /// under a quarter funded, cyan while it's raising, and green ("Raised") once it's full.
 private struct ListingCard: View {
-    let listing: Listing
+    let listing: OwnerListing
     @State private var shownProgress: Double = 0
 
     private var tint: Color {
@@ -501,7 +513,7 @@ private struct ListingCard: View {
     }
 
     private var raisedText: String {
-        "\(Self.short(listing.raised)) raised of \(Self.short(listing.goal))"
+        "\(listing.sharesSold.grouped) of \(listing.sharesOffered.grouped) shares sold · \(listing.raised.shortNaira)"
     }
 
     var body: some View {
@@ -553,15 +565,6 @@ private struct ListingCard: View {
         }
         .accessibilityElement(children: .combine)
     }
-
-    /// "₦2.5M", "₦650K"
-    private static func short(_ value: Double) -> String {
-        if value >= 1_000_000 {
-            let m = value / 1_000_000
-            return "₦" + (m.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(m)) : String(format: "%.1f", m)) + "M"
-        }
-        return "₦\(Int(value / 1000))K"
-    }
 }
 
 // MARK: - Shared pieces
@@ -583,7 +586,13 @@ private struct SectionHeader<Trailing: View>: View {
 
 private struct ViewAllButton: View {
     var body: some View {
-        Button("View All") {}
+        Button {} label: { ViewAllLabel() }
+    }
+}
+
+private struct ViewAllLabel: View {
+    var body: some View {
+        Text("View All")
             .font(AppFont.interTight(14, relativeTo: .subheadline))
             .foregroundStyle(Color.grey50)
     }
@@ -724,6 +733,42 @@ private enum BusinessTab: String, HomeTab {
     }
 }
 
+/// Every business the investor holds, two cards to a row (Figma 1074:20438). Opened from
+/// View All on Portfolio Distribution; each card opens the business's page.
+struct PortfolioDistributionView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    private let holdings = Company.all.filter { $0.holding != nil }
+    private let columns = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
+
+    var body: some View {
+        ScrollView {
+            LazyVGrid(columns: columns, spacing: 8) {
+                ForEach(holdings) { company in
+                    if let stake = company.holding {
+                        NavigationLink(value: HomeRoute.company(company.name)) {
+                            StatCard(name: company.name, value: stake.currentValue.naira, change: stake.gainPercent) {
+                                Image(company.logo)
+                                    .resizable()
+                                    .frame(width: 40, height: 40)
+                            }
+                        }
+                        .buttonStyle(RowPressStyle())
+                    }
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 6)
+            .padding(.bottom, 24)
+            .frame(maxWidth: 480)
+            .frame(maxWidth: .infinity)
+        }
+        .scrollIndicators(.hidden)
+        .background(Color(.systemBackground))
+        .homeScreenChrome(title: "Portfolio Distribution") { dismiss() }
+    }
+}
+
 /// The floating dark-teal tab bar: the selected tab is a cyan capsule with its icon and
 /// name, the others show just their icon. Tap a tab, or drag along the bar and the pill
 /// follows your finger from tab to tab. Every tab's width eases with the same spring as
@@ -820,6 +865,81 @@ private struct FloatingTabBar<Tab: HomeTab>: View {
     private func select(_ tab: Tab) {
         guard tab != selection else { return }
         withAnimation(Self.slide) { selection = tab }
+    }
+}
+
+// MARK: - Pull to refresh
+
+extension EnvironmentValues {
+    /// How many times the screen has been pulled to refresh. Views that show "fresh data"
+    /// (cards re-entering, a balance ticking) react when it changes.
+    @Entry var reloadCount = 0
+}
+
+extension View {
+    /// Pull down to reload, on the Home, Portfolio and Wallet tabs. The prototype has no
+    /// server, so it waits a beat and then plays the content back in as if it were new.
+    /// The spinner is tinted in GrowvestApp.
+    func pullToRefresh() -> some View {
+        modifier(PullToRefresh())
+    }
+
+    /// Fades and rises back into place after a refresh; `order` staggers a list so it
+    /// arrives row by row.
+    func reloadEntrance(order: Int = 0) -> some View {
+        modifier(ReloadEntrance(order: order))
+    }
+}
+
+private struct PullToRefresh: ViewModifier {
+    @State private var reloads = 0
+
+    func body(content: Content) -> some View {
+        content
+            .refreshable {
+                try? await Task.sleep(for: .seconds(1.2))
+                withAnimation(.snappy) { reloads += 1 }
+            }
+            .environment(\.reloadCount, reloads)
+            .sensoryFeedback(.success, trigger: reloads)
+            #if DEBUG
+            .task {
+                // -demoRefresh: plays a refresh two seconds in, for checking the animation.
+                guard UserDefaults.standard.bool(forKey: "demoRefresh") else { return }
+                try? await Task.sleep(for: .seconds(2))
+                withAnimation(.snappy) { reloads += 1 }
+            }
+            #endif
+    }
+}
+
+private struct ReloadEntrance: ViewModifier {
+    let order: Int
+    @Environment(\.reloadCount) private var reloads
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private struct Pose {
+        var opacity = 1.0
+        var offset: CGFloat = 0
+    }
+
+    func body(content: Content) -> some View {
+        content.keyframeAnimator(initialValue: Pose(), trigger: reloads) { view, pose in
+            view.opacity(pose.opacity).offset(y: pose.offset)
+        } keyframes: { _ in
+            // Never zero: a zero-length keyframe yields an invalid offset and the view jumps to the corner.
+            let wait = 0.01 + min(Double(order), 8) * 0.05
+            KeyframeTrack(\.opacity) {
+                MoveKeyframe(0.15)
+                LinearKeyframe(0.15, duration: wait)
+                CubicKeyframe(1, duration: 0.35)
+            }
+            KeyframeTrack(\.offset) {
+                MoveKeyframe(reduceMotion ? 0 : 14)
+                LinearKeyframe(reduceMotion ? 0 : 14, duration: wait)
+                SpringKeyframe(0, duration: 0.5, spring: .snappy)
+            }
+        }
     }
 }
 

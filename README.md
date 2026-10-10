@@ -54,7 +54,10 @@ xcrun simctl launch booted com.growvest.prototype -demoAmount 100000 -demoStep r
 | Argument | Values |
 |---|---|
 | `-demoFlow` | `home`, `sell`, `kyc`, `profile` |
-| `-demoHome` | `business`, `hidden` |
+| `-demoHome` | `business`, `hidden`, `listing` (an offer still raising), `listing-trading` (a sold-out listing) |
+| `-demoListingTab` | `overview`, `investors`, `updates`, `documents` (with `-demoHome listing…`) |
+| `-demoReport` | `uploaded`, `submitted`: this month’s report on a listing (with `-demoHome listing…`) |
+| `-demoRefresh` | `YES`: plays a pull-to-refresh two seconds after Home opens |
 | `-demoAmount` | An amount to pre-type, e.g. `25000` |
 | `-demoStep` (buy/sell) | `payment`, `review`, `pin`, `success`, `swap`, `typing`, `tour` |
 | `-demoKYC` | `idcard`, `face`, `address`, `ready`, `submitted` |

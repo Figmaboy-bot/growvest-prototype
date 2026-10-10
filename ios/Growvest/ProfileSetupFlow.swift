@@ -1071,7 +1071,7 @@ private struct VerificationStep: View {
                      onContinue: flow.submitForVerification) {
             VStack(spacing: 12) {
                 ForEach(BusinessDocument.allCases) { kind in
-                    UploadDocumentCard(kind: kind, upload: $flow.documents[kind])
+                    UploadDocumentCard(title: kind.title, about: kind.about, upload: $flow.documents[kind])
                 }
             }
         }
@@ -1172,8 +1172,10 @@ private struct VerifyingStep: View {
 /// The Upload Document component (Figma 1112:4522) in its three states:
 /// Default ("Click here to upload"), Uploading (name, spinner, progress, ✕ to cancel)
 /// and Uploaded (size, "Completed", bin to remove). Uploads are simulated.
-private struct UploadDocumentCard: View {
-    let kind: BusinessDocument
+/// Used for business verification and for the monthly reports on a listing.
+struct UploadDocumentCard: View {
+    let title: String
+    let about: String
     @Binding var upload: DocumentUpload?
 
     @State private var isChoosingSource = false
@@ -1185,10 +1187,10 @@ private struct UploadDocumentCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(kind.title)
+                Text(title)
                     .font(AppFont.interTight(16, relativeTo: .callout))
                     .foregroundStyle(.white)
-                Text(kind.about)
+                Text(about)
                     .font(AppFont.interTight(14, relativeTo: .subheadline))
                     .foregroundStyle(Color.grey50)
             }
@@ -1214,7 +1216,7 @@ private struct UploadDocumentCard: View {
                         }
                         .buttonStyle(RowPressStyle())
                         .transition(.opacity)
-                        .accessibilityLabel("Upload \(kind.title)")
+                        .accessibilityLabel("Upload \(title)")
                     }
                 }
                 .animation(Motion.step, value: upload == nil)
@@ -1227,7 +1229,7 @@ private struct UploadDocumentCard: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.grey80, in: .rect(cornerRadius: 20))
-        .confirmationDialog("Upload \(kind.title)", isPresented: $isChoosingSource, titleVisibility: .visible) {
+        .confirmationDialog("Upload \(title)", isPresented: $isChoosingSource, titleVisibility: .visible) {
             Button("Choose File") { isImportingFile = true }
             Button("Choose from Photos") { isPickingPhoto = true }
         }
@@ -1249,7 +1251,7 @@ private struct UploadDocumentCard: View {
                 let data = try? await item.loadTransferable(type: Data.self)
                 let thumbnail = if let data { await ImageDownsampler.image(from: data, maxPointSize: 40) } else { UIImage?.none }
                 let ext = item.supportedContentTypes.first?.preferredFilenameExtension ?? "jpg"
-                start(DocumentUpload(fileName: "\(kind.title.replacingOccurrences(of: " ", with: "-")).\(ext)",
+                start(DocumentUpload(fileName: "\(title.replacingOccurrences(of: " ", with: "-")).\(ext)",
                                      byteCount: data?.count ?? 0,
                                      thumbnail: thumbnail))
                 photoItem = nil

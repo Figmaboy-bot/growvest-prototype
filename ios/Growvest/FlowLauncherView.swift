@@ -46,7 +46,8 @@ enum PrototypeFlow: String, CaseIterable, Identifiable {
     @ViewBuilder
     var destination: some View {
         switch self {
-        case .home: HomeView()
+        // Pulling down on Home refreshes it, so it mustn't also swipe the flow closed.
+        case .home: HomeView().interactiveDismissDisabled()
         case .buyShares: TradeView(kind: .buy)
         case .sellShares: TradeView(kind: .sell)
         case .kyc: KYCView()

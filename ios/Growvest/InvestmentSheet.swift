@@ -214,7 +214,7 @@ private struct ReviewStep: View {
 
     var body: some View {
         VStack(spacing: 28) {
-            SheetHeader(title: "Review Investment") { flow.sheetStep = .payment }
+            SheetHeader(title: flow.isSelling ? "Review Sale" : "Review Investment") { flow.sheetStep = .payment }
 
             VStack(spacing: 16) {
                 LabeledSection(title: "Business") {
@@ -239,7 +239,7 @@ private struct ReviewStep: View {
                 LabeledSection(title: "Investment Summary") {
                     SummaryCard(rows: flow.isSelling ? [
                         ("Shares to sell", "\(flow.shares)"),
-                        ("Share price", flow.pricePerShare.naira),
+                        ("Asking price", flow.pricePerShare.naira + " / share"),
                         ("Sale value", flow.saleValue.naira),
                         ("Transaction fee", 0.0.naira),
                         ("You'll receive", flow.saleValue.naira),
@@ -270,7 +270,10 @@ private struct ReviewStep: View {
             }
 
             if flow.isSelling {
-                SaleAcknowledgement(isChecked: $flow.hasAcknowledgedSaleRisk)
+                VStack(spacing: 16) {
+                    SaleMatchingNote(flow: flow)
+                    SaleAcknowledgement(isChecked: $flow.hasAcknowledgedSaleRisk, buybackPrice: flow.buybackPrice)
+                }
             } else {
                 HStack(alignment: .top, spacing: 10) {
                     Image(.warning)
@@ -283,17 +286,39 @@ private struct ReviewStep: View {
                 .background(Color.warning10, in: .rect(cornerRadius: 20))
             }
 
-            Button(flow.isSelling ? "Confirm Sale" : "Confirm Investment") { flow.sheetStep = .pin }
+            Button(flow.isSelling ? "List Shares for Sale" : "Confirm Investment") { flow.sheetStep = .pin }
                 .buttonStyle(PrimaryButtonStyle())
                 .disabled(flow.isSelling && !flow.hasAcknowledgedSaleRisk)
         }
     }
 }
 
-/// Sell review: a round checkbox the user ticks before "Confirm Sale" unlocks.
+/// Sell review: how a sale works. Growvest doesn't buy the shares straight away; it offers
+/// them to other investors and pays the seller as they sell, buying any left over itself.
+private struct SaleMatchingNote: View {
+    let flow: InvestmentFlow
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "arrow.left.arrow.right")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.primary50)
+                .padding(.top, 2)
+            Text("Your shares go on sale to other investors on Growvest, and you’re paid as they sell. Any still unsold after \(InvestmentFlow.saleMatchingDays) days, Growvest buys at \(flow.buybackPrice.naira) a share (\(Int(InvestmentFlow.unsoldBuybackDiscount * 100))% below the asking price).")
+                .font(AppFont.interTight(12, relativeTo: .caption))
+                .foregroundStyle(Color.grey40)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(12)
+        .background(Color.primary20.opacity(0.5), in: .rect(cornerRadius: 20))
+    }
+}
+
+/// Sell review: a round checkbox the user ticks before "List Shares for Sale" unlocks.
 /// Design: a 20pt grey circle beside the statement; ticked, it fills with the brand colour.
 private struct SaleAcknowledgement: View {
     @Binding var isChecked: Bool
+    let buybackPrice: Double
 
     var body: some View {
         Button { isChecked.toggle() } label: {
@@ -308,7 +333,7 @@ private struct SaleAcknowledgement: View {
                 }
                 .frame(width: 20, height: 20)
 
-                Text("I understand that selling these shares may affect my investment returns.")
+                Text("I understand my shares sell only when another investor buys them, or to Growvest at \(buybackPrice.naira) a share after \(InvestmentFlow.saleMatchingDays) days.")
                     .font(AppFont.interTight(14, relativeTo: .subheadline))
                     .foregroundStyle(Color.grey50)
                     .multilineTextAlignment(.leading)
@@ -334,14 +359,14 @@ private struct PinStep: View {
     var body: some View {
         VStack(spacing: 64) {
             VStack(spacing: 28) {
-                SheetHeader(title: flow.isSelling ? "Confirm your Sale" : "Confirm Investment") { flow.sheetStep = .review }
+                SheetHeader(title: flow.isSelling ? "Confirm Listing" : "Confirm Investment") { flow.sheetStep = .review }
 
                 VStack(spacing: 40) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Enter your PIN")
                             .font(AppFont.interTight(24, relativeTo: .title2))
                             .foregroundStyle(.white)
-                        Text("Enter your 4-digit PIN to complete your \(flow.isSelling ? "sale" : "investment").")
+                        Text("Enter your 4-digit PIN to \(flow.isSelling ? "list your shares for sale" : "complete your investment").")
                             .font(AppFont.interTight(16, relativeTo: .callout))
                             .foregroundStyle(Color.grey50)
                     }
@@ -374,7 +399,7 @@ private struct PinStep: View {
                 }
             }
 
-            Button(flow.isSelling ? "Confirm Sale" : "Confirm Investment", action: flow.complete)
+            Button(flow.isSelling ? "List Shares for Sale" : "Confirm Investment", action: flow.complete)
                 .buttonStyle(PrimaryButtonStyle())
                 .disabled(pin.count < 4)
         }
@@ -443,7 +468,7 @@ private struct PinStep: View {
             return
         }
         context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics,
-                               localizedReason: flow.isSelling ? "Confirm the sale of your \(flow.business.name) shares"
+                               localizedReason: flow.isSelling ? "List your \(flow.business.name) shares for sale"
                                                                : "Confirm your investment in \(flow.business.name)") { success, _ in
             if success {
                 Task { @MainActor in flow.complete() }
@@ -473,22 +498,25 @@ private struct SuccessStep: View {
                 AnimatedSealCheck()
 
                 VStack(spacing: 8) {
-                    Text(flow.isSelling ? "Sale Successful" : "Investment Successful")
+                    Text(flow.isSelling ? "Shares Listed for Sale" : "Investment Successful")
                         .font(AppFont.interTight(24, relativeTo: .title2))
                         .foregroundStyle(.white)
                     Text(flow.isSelling
-                         ? "You've successfully sold \(flow.shares) \(flow.shares == 1 ? "share" : "shares") of \(flow.business.name)."
+                         ? "Your \(flow.shares) \(flow.shares == 1 ? "share" : "shares") of \(flow.business.name) \(flow.shares == 1 ? "is" : "are") on sale to other investors. We’ll pay you as they sell."
                          : "Secure your account by uploading the required documents for verification.")
                         .font(AppFont.interTight(16, relativeTo: .callout))
                         .foregroundStyle(Color.grey50)
                         .multilineTextAlignment(.center)
                 }
 
-                LabeledSection(title: "Investment Details") {
+                LabeledSection(title: flow.isSelling ? "Sale Details" : "Investment Details") {
                     SummaryCard(rows: flow.isSelling ? [
-                        ("Shares sold", "\(flow.shares)"),
-                        ("Share price", flow.pricePerShare.naira),
+                        ("Status", "Waiting for a buyer"),
+                        ("Shares listed", "\(flow.shares)"),
+                        ("Asking price", flow.pricePerShare.naira + " / share"),
                         ("Sale value", flow.saleValue.naira),
+                        ("If unsold by", flow.buybackDate.formatted(.dateTime.day(.twoDigits).month(.abbreviated).year().locale(Locale(identifier: "en_GB")))),
+                        ("Growvest buys at", flow.buybackPrice.naira + " / share"),
                         ("Timestamp", flow.completedAt.investmentTimestamp),
                         ("Payment Destination", flow.paymentMethod?.name ?? "—"),
                     ] : [
@@ -502,7 +530,7 @@ private struct SuccessStep: View {
 
             // Side by side, equal widths: the secondary action on the left, Done on the right.
             HStack(spacing: 8) {
-                Button(flow.isSelling ? "View Transaction" : "View Investment", action: flow.reset)
+                Button(flow.isSelling ? "View Sale" : "View Investment", action: flow.reset)
                     .buttonStyle(SecondaryButtonStyle())
                 Button("Done", action: flow.reset)
                     .buttonStyle(PrimaryButtonStyle())

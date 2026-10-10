@@ -13,7 +13,7 @@ struct Business {
         name: "SwiftHarvest Ventures",
         tags: ["AgriTech", "Farming", "AI"],
         currentValue: 45_162.77,
-        pricePerShare: 62.99
+        pricePerShare: 50.18
     )
 }
 
@@ -22,7 +22,7 @@ struct Holding {
     let shares: Int
     let pricePerShare: Double
 
-    static let swiftHarvest = Holding(shares: 40, pricePerShare: 2_500)
+    static let swiftHarvest = Holding(shares: 900, pricePerShare: 50.18)
 }
 
 /// Which way the trade goes. Both share one flow; only copy, pricing and limits differ.
@@ -117,6 +117,19 @@ final class InvestmentFlow {
 
     /// What the sale pays out: only whole shares can be sold, so it's shares × price.
     var saleValue: Double { Double(shares) * pricePerShare }
+
+    /// Selling lists the shares for other investors to buy through Growvest. Any still
+    /// unsold after this many days, Growvest buys itself at a discount, so a sale always ends.
+    static let saleMatchingDays = 14
+    static let unsoldBuybackDiscount = 0.10
+
+    /// What Growvest pays per share for any listed shares still unsold after the matching window.
+    var buybackPrice: Double { pricePerShare * (1 - Self.unsoldBuybackDiscount) }
+
+    /// When Growvest buys any unsold shares, counted from when they're listed.
+    var buybackDate: Date {
+        Calendar.current.date(byAdding: .day, value: Self.saleMatchingDays, to: completedAt) ?? completedAt
+    }
 
     /// Selling more shares than the user holds.
     var exceedsHolding: Bool { isSelling && shares > holding.shares }

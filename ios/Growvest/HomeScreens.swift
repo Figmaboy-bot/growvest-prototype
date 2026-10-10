@@ -6,6 +6,8 @@ enum HomeRoute: Hashable {
     case company(String)
     case explore
     case notifications
+    case listing(String)
+    case portfolioDistribution
 }
 
 // MARK: - Data
@@ -18,10 +20,10 @@ struct Company: Identifiable {
     /// The sector the Explore and watchlist filters group it under.
     let sector: String
     let tagline: String
+    /// The price of one share: the same figure on the watchlist, the business's page and in Buy and Sell.
     let price: Double
     /// Percent change over the past week.
     let change: Double
-    let pricePerShare: Double
     var holding: Stake?
     let about: String
     let useOfFunds: [String]
@@ -36,8 +38,8 @@ struct Company: Identifiable {
         let paidOut: Double
         let monthsElapsed: Int
         let monthsTotal: Int
+        /// Shares held. Their value at today's price is `currentValue`.
         let shares: Int
-        let sharePrice: Double
 
         var gainPercent: Int { Int(((currentValue - invested) / invested * 100).rounded()) }
         var isActive: Bool { monthsElapsed < monthsTotal }
@@ -46,21 +48,20 @@ struct Company: Identifiable {
     /// What the buy and sell flows need. SwiftHarvest keeps the flows' original data.
     var tradeBusiness: Business {
         name == Business.swiftHarvest.name ? .swiftHarvest
-            : Business(name: name, tags: tags, currentValue: price, pricePerShare: pricePerShare, logo: logo)
+            : Business(name: name, tags: tags, currentValue: holding?.currentValue ?? 0, pricePerShare: price, logo: logo)
     }
 
-    var tradeHolding: Holding {
-        holding.map { Holding(shares: $0.shares, pricePerShare: $0.sharePrice) } ?? Holding(shares: 0, pricePerShare: pricePerShare)
-    }
+    /// Selling is at today's share price, the same one buying uses.
+    var tradeHolding: Holding { Holding(shares: holding?.shares ?? 0, pricePerShare: price) }
 
     static func named(_ name: String) -> Company? { all.first { $0.name == name } }
 
     static let swiftHarvest = Company(
         name: "SwiftHarvest Ventures", logo: .logoSwiftHarvest40, tags: ["AgriTech", "Farming", "AI"], sector: "Agriculture",
         tagline: "Precision agritech boosting crop yields with AI-driven irrigation.",
-        price: 45_162.77, change: 12, pricePerShare: 62.99,
+        price: 50.18, change: 12,
         holding: Stake(invested: 38_500, currentValue: 45_162.77, paidOut: 2_500, monthsElapsed: 7, monthsTotal: 12,
-                       shares: 40, sharePrice: 2_500),
+                       shares: 900),
         about: "SwiftHarvest deploys sensor-driven irrigation and yield analytics for mid-size farms, improving water efficiency and output.",
         useOfFunds: ["45% Infrastructure (Greenhouses, sensors)", "25% Working Capital (inputs, logistics)",
                      "20% R&D (AI irrigation models)", "10% Market Expansion (new farm clusters)"],
@@ -73,9 +74,9 @@ struct Company: Identifiable {
         Company(
             name: "CoreMedix Labs", logo: .logoCoreMedix, tags: ["HealthTech", "Diagnostics"], sector: "Tech",
             tagline: "Affordable lab diagnostics for clinics across West Africa.",
-            price: 38_420.10, change: -4, pricePerShare: 48.20,
+            price: 64.03, change: -4,
             holding: Stake(invested: 40_000, currentValue: 38_420.10, paidOut: 0, monthsElapsed: 4, monthsTotal: 18,
-                           shares: 25, sharePrice: 1_536),
+                           shares: 600),
             about: "CoreMedix runs shared diagnostic labs that let small clinics offer blood work and imaging without buying the equipment.",
             useOfFunds: ["50% Equipment (analysers, imaging)", "30% New lab sites", "20% Working Capital"],
             team: ["Ngozi Eze — CEO: physician, ex-Lagos University Teaching Hospital",
@@ -84,9 +85,9 @@ struct Company: Identifiable {
         Company(
             name: "TroveMart", logo: .logoTroveMart, tags: ["E-commerce", "Retail"], sector: "Tech",
             tagline: "An online marketplace connecting local makers to shoppers nationwide.",
-            price: 45_162.77, change: 1.4, pricePerShare: 35.10,
+            price: 90.39, change: 1.4,
             holding: Stake(invested: 55_000, currentValue: 72_310.40, paidOut: 4_000, monthsElapsed: 10, monthsTotal: 24,
-                           shares: 60, sharePrice: 1_205),
+                           shares: 800),
             about: "TroveMart lists products from independent makers and handles payments, delivery and returns for them.",
             useOfFunds: ["40% Logistics (fulfilment hubs)", "35% Marketing", "25% Product & engineering"],
             team: ["Chidi Nwosu — CEO: ex-Jumia category lead", "Halima Musa — CTO: payments engineer"]
@@ -94,9 +95,9 @@ struct Company: Identifiable {
         Company(
             name: "Suji’s Fashion House", logo: .logoSuji, tags: ["Fashion", "Retail"], sector: "Fashion",
             tagline: "Contemporary African tailoring, made to order in Lagos.",
-            price: 28_904.50, change: -2.9, pricePerShare: 22.40,
+            price: 84.53, change: -2.9,
             holding: Stake(invested: 48_000, currentValue: 59_167.53, paidOut: 0, monthsElapsed: 3, monthsTotal: 12,
-                           shares: 50, sharePrice: 1_183),
+                           shares: 700),
             about: "Suji’s designs and tailors ready-to-wear and made-to-measure clothing, sold in its Lagos studio and online.",
             useOfFunds: ["50% Production (machines, fabric)", "30% Second studio", "20% E-commerce"],
             team: ["Suji Adeyemi — Founder & Creative Director", "Bola Ajayi — Head of Operations"]
@@ -104,7 +105,7 @@ struct Company: Identifiable {
         Company(
             name: "StitchWorks Atelier", logo: .logoSewing52, tags: ["Fashion", "Manufacturing"], sector: "Fashion",
             tagline: "Contract garment production for independent fashion labels.",
-            price: 12_310.00, change: 1.4, pricePerShare: 9.80,
+            price: 224, change: 1.4,
             about: "StitchWorks produces small garment runs for independent labels that are too small for large factories.",
             useOfFunds: ["60% Machinery", "25% Staff training", "15% Working Capital"],
             team: ["Ifeoma Okafor — CEO: 15 yrs garment production"]
@@ -112,7 +113,7 @@ struct Company: Identifiable {
         Company(
             name: "SafeBond Finance", logo: .logoSafeBond, tags: ["Fintech", "Savings"], sector: "Tech",
             tagline: "Fixed-income savings products for small businesses.",
-            price: 8_450.00, change: 2.1, pricePerShare: 12.50,
+            price: 100, change: 2.1,
             about: "SafeBond pools small businesses’ idle cash into short-term government bonds, with withdrawals in one day.",
             useOfFunds: ["40% Licensing & compliance", "35% Product", "25% Customer acquisition"],
             team: ["Emeka Obi — CEO: ex-investment banker", "Zainab Lawal — CRO: risk & compliance"]
@@ -120,7 +121,7 @@ struct Company: Identifiable {
         Company(
             name: "CapitalSpring Ltd.", logo: .logoCapitalSpring, tags: ["Energy", "Cold Storage"], sector: "Agriculture",
             tagline: "Geothermal-powered cold storage for fresh produce.",
-            price: 15_720.40, change: 0.8, pricePerShare: 18.75,
+            price: 50, change: 0.8,
             about: "CapitalSpring builds cold rooms near farms, run on geothermal energy, so produce lasts long enough to reach market.",
             useOfFunds: ["55% Cold rooms", "30% Energy systems", "15% Working Capital"],
             team: ["Yusuf Bello — CEO: renewable energy engineer"]
@@ -583,7 +584,7 @@ private struct DownPointer: Shape {
 // MARK: Cards
 
 /// A 16pt heading over a grey card whose rows are split by black hairlines.
-private struct InfoSection<Content: View>: View {
+struct InfoSection<Content: View>: View {
     let title: String
     @ViewBuilder var content: Content
 
@@ -619,7 +620,7 @@ struct HairlineCard<Content: View>: View {
     }
 }
 
-private struct InfoRow<Value: View>: View {
+struct InfoRow<Value: View>: View {
     let label: String
     @ViewBuilder var value: Value
 
@@ -635,7 +636,7 @@ private struct InfoRow<Value: View>: View {
     }
 }
 
-private struct OverviewBlock: View {
+struct OverviewBlock: View {
     let label: String
     let lines: [String]
 
@@ -988,7 +989,7 @@ private struct NotificationRow: View {
 /// The pinned header in place of the system navigation bar: round back button, an
 /// optional centered title and trailing button. It's opaque, and keeps the same 24pt
 /// below the buttons as at the sides, so scrolled content never crowds them.
-private struct HomeScreenChrome<Trailing: View>: ViewModifier {
+struct HomeScreenChrome<Trailing: View>: ViewModifier {
     let title: String?
     let onBack: () -> Void
     @ViewBuilder var trailing: Trailing
@@ -1022,14 +1023,14 @@ private struct HomeScreenChrome<Trailing: View>: ViewModifier {
     }
 }
 
-private extension View {
+extension View {
     func homeScreenChrome<Trailing: View>(title: String? = nil, onBack: @escaping () -> Void,
                                           @ViewBuilder trailing: () -> Trailing = { EmptyView() }) -> some View {
         modifier(HomeScreenChrome(title: title, onBack: onBack, trailing: trailing))
     }
 }
 
-private extension Double {
+extension Double {
     /// "12", "2.9": the size of a change, whose direction the badge's arrow shows.
     var magnitudeText: String {
         let size = abs(self)

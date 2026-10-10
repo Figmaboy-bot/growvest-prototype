@@ -27,10 +27,12 @@ struct TradeView: View {
 
                     VStack(spacing: 16) {
                         SummaryCard(rows: flow.isSelling ? [
-                            ("Current share price", flow.holding.pricePerShare.wholeNaira + " / share"),
+                            ("Current share price", flow.holding.pricePerShare.naira + " / share"),
                             ("Shares available", "\(flow.holding.shares) shares"),
-                        ] : [
+                        ] : flow.business.currentValue > 0 ? [
                             ("Current Value", flow.business.currentValue.naira),
+                            ("Price per share", flow.business.pricePerShare.naira),
+                        ] : [
                             ("Price per share", flow.business.pricePerShare.naira),
                         ])
 
