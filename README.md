@@ -54,7 +54,8 @@ xcrun simctl launch booted com.growvest.prototype -demoAmount 100000 -demoStep r
 | Argument | Values |
 |---|---|
 | `-demoFlow` | `home`, `sell`, `kyc`, `profile` |
-| `-demoHome` | `business`, `hidden`, `listing` (an offer still raising), `listing-trading` (a sold-out listing) |
+| `-demoHome` | `business`, `hidden`, `listing` (an offer still raising), `listing-trading` (a sold-out listing), `profile` (the Profile tab) |
+| `-demoProfile` | `kyc`: KYC Verification opened from the Profile tab (with `-demoHome profile`) |
 | `-demoListingTab` | `overview`, `investors`, `updates`, `documents` (with `-demoHome listing…`) |
 | `-demoReport` | `uploaded`, `submitted`: this month’s report on a listing (with `-demoHome listing…`) |
 | `-demoRefresh` | `YES`: plays a pull-to-refresh two seconds after Home opens |

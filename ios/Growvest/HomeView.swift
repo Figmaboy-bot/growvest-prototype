@@ -55,6 +55,7 @@ struct HomeView: View {
             case "distribution": path = [.portfolioDistribution]
             case "portfolio": investorTab = .portfolio
             case "wallet": investorTab = .wallet
+            case "profile": investorTab = .profile
             default: break
             }
         }
@@ -100,6 +101,9 @@ struct HomeView: View {
                 } else if mode == .investor && investorTab == .wallet {
                     WalletView(isBalanceHidden: $isBalanceHidden)
                         .transition(.opacity)
+                } else if isOnProfileTab {
+                    ProfileView { dismiss() }
+                        .transition(.opacity)
                 } else {
                     TabPlaceholder(title: placeholderTitle) { dismiss() }
                 }
@@ -115,6 +119,11 @@ struct HomeView: View {
 
     private var isOnHomeTab: Bool {
         mode == .investor ? investorTab == .home : businessTab == .home
+    }
+
+    /// Profile is the same screen in both modes.
+    private var isOnProfileTab: Bool {
+        mode == .investor ? investorTab == .profile : businessTab == .profile
     }
 
     private var placeholderTitle: String {
